@@ -10,13 +10,19 @@
 > **Obsoleta (2026-07-02).** La superficie de ataque que esta spec mitigaba
 > **dejó de existir**: el scraper de navegación web (`scraper.py`) se eliminó como
 > código muerto en el commit `71e3923` (*"eliminar el scraper del Investigador"*,
-> Refs #159). El Investigador ya no realiza fetch saliente influido por el usuario
-> (sus fuentes son el RAG local), por lo que no hay vector SSRF que proteger y la
-> guarda de egress propuesta (`app/shared/egress.py`, `assert_safe_url`) **nunca se
-> implementó ni es necesaria** con la arquitectura actual. Se conserva como registro
-> histórico. Si en el futuro se reintroduce fetch saliente, ábrase una **nueva spec**
-> de control de egress en vez de reactivar esta. La tarea T2.1 queda sin efecto (el
-> bloque `sdd-sync` de la sección 8 ya no se sincroniza al no estar en Ready).
+> Refs #159). Se conserva como registro histórico. Si en el futuro se reintroduce
+> fetch saliente, ábrase una **nueva spec** de control de egress en vez de reactivar
+> esta. La tarea T2.1 queda sin efecto (el bloque `sdd-sync` de la sección 8 ya no se
+> sincroniza al no estar en Ready).
+>
+> **Actualización (2026-09-04).** Eso es exactamente lo que pasó: el fetch saliente
+> volvió por otra puerta —las capacidades de herramientas, `fetch_url` en
+> `platform/capabilities/tools.py`— con la URL elegida por el modelo y sin ninguna
+> validación de destino. La frase de arriba que decía que la guarda «no es necesaria
+> con la arquitectura actual» **dejó de ser cierta** y se ha retirado. La sustituta,
+> siguiendo la instrucción de esta misma nota, es
+> [SPEC-024](SPEC-024-egress-control-agent-tools.md) (tarea T2.5), que sí implementa
+> la guarda central.
 
 ## 1. Problema
 

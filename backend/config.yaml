@@ -109,3 +109,17 @@ otel:
   service_name: alejandria-backend
   # Endpoint OTLP/HTTP del colector, p. ej. http://otel-collector:4318
   endpoint: ""
+
+# Egress de las herramientas de agente (SPEC-024/T2.5). Solo aplica a los destinos
+# que elige el usuario o el modelo — `fetch_url` y la búsqueda académica—, no a la
+# infraestructura (Ollama, Qdrant, proveedores de LLM), que es privada a propósito.
+# Lo interno (loopback, redes privadas, enlace-local y el endpoint de metadatos de
+# la nube) se bloquea siempre, esté o no en la allowlist.
+egress:
+  # Dominios separados por comas. Vacío = todo lo público. Poblado, solo lo listado.
+  allowed_domains: ""
+  # Se rechazan aunque estén en la allowlist.
+  denied_domains: ""
+  # `http://` en claro. Apagado: en claro la respuesta es manipulable.
+  allow_http: false
+  max_redirects: 3

@@ -15,7 +15,10 @@ import re
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse, unquote
 
-import httpx
+# Sin cliente HTTP propio: todo el fetch saliente de este módulo sale por la guarda
+# de egress (SPEC-024/AC4). Un `httpx.AsyncClient` aquí volvería a esquivarla, y hay
+# un test estructural que lo impide.
+from app.platform.egress import EgressBlocked, safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -161,13 +164,17 @@ async def _web_search(query: str) -> str:
 
 
 async def _fetch_url(url: str) -> str:
-    """Fetch a URL and return plain text (HTML stripped, max 3000 chars)."""
-    if not url.startswith(("http://", "https://")):
-        return "URL inválida. Debe empezar por http:// o https://"
+    """Fetch a URL and return plain text (HTML stripped, max 8000 chars).
+
+    La URL la elige **el modelo**, y lo descargado vuelve a su contexto. Sin la
+    guarda de egress (SPEC-024) esto alcanza el endpoint de metadatos de la nube,
+    la propia API en `localhost` o Qdrant, y devuelve lo leído: no es un SSRF
+    ciego, es exfiltración. La comprobación del esquema la hace también la guarda;
+    aquí no se repite para que haya **un** sitio que decide.
+    """
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; AlejandrIA/1.0; +research)"}
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
+        resp = await safe_get(url, quien="fetch_url", headers=headers, timeout=15.0)
         if resp.status_code != 200:
             return f"No se pudo obtener la URL (HTTP {resp.status_code})."
         ct = resp.headers.get("content-type", "")
@@ -180,6 +187,12 @@ async def _fetch_url(url: str) -> str:
         if len(text) > 8000:
             text = text[:8000] + "… [truncado]"
         return text or "No se pudo extraer texto."
+    except EgressBlocked as exc:
+        # Al modelo se le dice que se ha bloqueado, no por qué: el motivo describe
+        # la red interna y su respuesta acaba en el contexto. El detalle queda en
+        # el log, que es donde lo necesita quien lo diagnostique.
+        logger.warning("fetch_url bloqueado: %s — %s", url, exc)
+        return "Destino no permitido por la política de egress."
     except Exception as exc:
         return f"Error al obtener URL: {exc}"
 
@@ -210,9 +223,10 @@ async def ddg_search_with_urls(query: str, max_results: int = 5) -> List[Dict[st
             "max_results": max(2, max_results // 2 + 1),
             "sortBy": "relevance",
         }
-        # verify=False handles corporate proxies with SSL inspection
-        async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
-            r = await client.get(arxiv_url, params=arxiv_params)
+        # Sin `verify=False`: un proxy con inspección TLS se arregla instalando su
+        # CA en el sistema (o `SSL_CERT_FILE`), no apagando la verificación para
+        # todo el mundo y para siempre.
+        r = await safe_get(arxiv_url, quien="arxiv", params=arxiv_params, timeout=8.0)
         if r.status_code == 200:
             ns = {"atom": "http://www.w3.org/2005/Atom"}
             root = ET.fromstring(r.text)
@@ -248,8 +262,10 @@ async def ddg_search_with_urls(query: str, max_results: int = 5) -> List[Dict[st
             wiki_headers = {
                 "User-Agent": "AlejandrIA-Magazine/0.1 (scientific article generation; contact@alejandria.local)"
             }
-            async with httpx.AsyncClient(timeout=8.0, verify=False, headers=wiki_headers) as client:
-                r = await client.get(wiki_url, params=wiki_params)
+            r = await safe_get(
+                wiki_url, quien="wikipedia", params=wiki_params,
+                headers=wiki_headers, timeout=8.0,
+            )
             if r.status_code == 200:
                 data = r.json()
                 for item in data.get("query", {}).get("search", []):

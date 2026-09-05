@@ -140,6 +140,17 @@ Docker (`docker compose up --build`, backend en `:8080`).
   documentos, pídele la dependencia `get_project_context` — hay un test que lo
   comprueba. Para bases anteriores:
   `python scripts/migrate_rag_namespaces.py --apply`.
+- **Egress (T2.5, SPEC-024)**: `backend/app/platform/egress.py` es la **única**
+  puerta de salida para destinos que elige la persona usuaria o **el modelo** — la
+  herramienta `fetch_url` del catálogo de `capabilities/tools.py` y la búsqueda
+  académica. Bloquea por **IP resuelta** (loopback, privadas, enlace-local con el
+  endpoint de metadatos de la nube, IPv4 mapeada en IPv6) y **revalida cada
+  redirección**, porque `follow_redirects=True` obedece a `Location:` sin
+  preguntar. Si añades fetch saliente influido por usuario o modelo, sale por
+  `safe_get`; hay un test estructural que falla si aparece un `httpx.AsyncClient`
+  en `tools.py` o un `verify=False` en `backend/app/`. **Ollama, Qdrant y los
+  proveedores de LLM quedan fuera a propósito**: son `localhost` o red privada
+  adrede y su URL sale de la configuración, no de una entrada de usuario.
 - **Config con precedencia**: env vars > `config.yaml` (raíz o `backend/`) >
   defaults en `backend/app/core/config.py`. En producción `SECRET_KEY` es
   obligatorio; en debug se autocrean usuarios y admin.

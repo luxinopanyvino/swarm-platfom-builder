@@ -104,6 +104,21 @@ class Settings(BaseModel):
     QDRANT_COLLECTION: str = "rag_docs"
     RAG_VECTOR_SIZE: int = 768
 
+    # Egress de las herramientas de agente (SPEC-024/T2.5). Solo aplica a los
+    # destinos que elige el usuario o el modelo; Ollama, Qdrant y los proveedores
+    # de LLM quedan fuera a propósito — son infraestructura configurada, y su URL
+    # es privada adrede.
+    #: Dominios separados por comas. Vacía = «todo lo público» (lo interno sigue
+    #: bloqueado por IP). Poblada, solo pasa lo que esté aquí.
+    EGRESS_ALLOWED_DOMAINS: str = ""
+    #: Dominios separados por comas que se rechazan aunque estén en la allowlist.
+    EGRESS_DENIED_DOMAINS: str = ""
+    #: `http://` en claro. Apagado por defecto: una herramienta de lectura web no
+    #: tiene por qué necesitarlo, y en claro la respuesta es manipulable.
+    EGRESS_ALLOW_HTTP: bool = False
+    #: Saltos de redirección que se siguen, revalidando cada uno.
+    EGRESS_MAX_REDIRECTS: int = 3
+
     # LLM Provider — "anthropic" (default, Claude via official SDK) |
     # "ollama" (on-prem) | "openai" (OpenAI-compatible API, incl. vLLM/LM Studio).
     # Claude is the default agentic engine (SPEC-023/ADR-0009); switch to on-prem
@@ -192,6 +207,7 @@ def _build_settings() -> Settings:
     retention = yaml_config.get("retention", {})
     otel = yaml_config.get("otel", {})
     engine = yaml_config.get("engine", {})
+    egress = yaml_config.get("egress", {})
 
     merged: dict[str, Any] = {
         "APP_NAME": app.get("name", "Alejandria Magazine"),
@@ -259,6 +275,11 @@ def _build_settings() -> Settings:
             if yaml_config.get("agents", {}).get("investigador", {}).get("semantic_rerank") is not None
             else yaml_config.get("investigador", {}).get("semantic_rerank", True)
         ),
+        # Egress (SPEC-024/T2.5)
+        "EGRESS_ALLOWED_DOMAINS": egress.get("allowed_domains", ""),
+        "EGRESS_DENIED_DOMAINS": egress.get("denied_domains", ""),
+        "EGRESS_ALLOW_HTTP": egress.get("allow_http", False),
+        "EGRESS_MAX_REDIRECTS": egress.get("max_redirects", 3),
         # RAG global defaults
         "RAG_CHUNK_SIZE": yaml_config.get("rag", {}).get("chunk_size", 800),
         "RAG_CHUNK_OVERLAP": yaml_config.get("rag", {}).get("chunk_overlap", 80),
