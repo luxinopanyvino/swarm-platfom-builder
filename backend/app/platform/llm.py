@@ -233,6 +233,75 @@ def resolve_agent_model(agent_name: str, agent_settings: Optional[dict] = None) 
     return get_default_model()
 
 
+#: Rango que acepta cada proveedor. Anthropic corta en 1.0 y **rechaza** con 400
+#: cualquier valor por encima; OpenAI y Ollama llegan a 2.0. Mandar un 1.5 a Claude
+#: es el mismo tipo de fallo que mandarle un id de Ollama: la configuración es
+#: plausible y el error solo aparece al generar, con el artículo a medias.
+TEMPERATURA_MAXIMA = {"anthropic": 1.0, "openai": 2.0, "ollama": 2.0}
+
+
+def _clamp_temperature(valor: Optional[float], provider: str) -> Optional[float]:
+    """Recorta la temperatura al rango del proveedor activo, o `None` si no hay.
+
+    Se recorta **aquí**, en la única puerta a los proveedores, y no en quien la
+    resuelve: así protege también a quien llame a `call_llm` directamente —el juez
+    de las evals, por ejemplo—. Recortar y no rechazar porque el valor viene de un
+    campo de la interfaz sin límites: dejar de generar por una temperatura de 1.2
+    sería peor que generar con 1.0.
+    """
+    if valor is None:
+        return None
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        logger.warning("Temperatura no numérica (%r); se usa el default del proveedor.", valor)
+        return None
+
+    maximo = TEMPERATURA_MAXIMA.get(provider, 2.0)
+    recortado = max(0.0, min(maximo, numero))
+    if recortado != numero:
+        logger.warning(
+            "Temperatura %s fuera del rango de '%s' (0-%s); se recorta a %s.",
+            numero, provider, maximo, recortado,
+        )
+    return recortado
+
+
+def resolve_agent_temperature(
+    agent_name: str, agent_settings: Optional[dict] = None
+) -> Optional[float]:
+    """Temperatura del agente, o `None` para dejar el default del proveedor.
+
+    Cascada, de lo más específico a lo más general:
+
+    1. ``agent_settings[agent].temperature`` — lo que se eligió para **esta**
+       ejecución. El router ya funde ahí el valor del perfil en BD, que es lo que
+       edita la interfaz, así que este escalón cubre los dos.
+    2. ``.agent.md`` ``temperature`` — para los caminos que no pasan por el router:
+       el harness EDD en modo `live`, o una llamada directa al orquestador.
+    3. ``None`` — no se envía nada y manda el default del proveedor, que es el
+       comportamiento que había antes de conectar esto.
+
+    Espejo de :func:`resolve_agent_model`, a propósito: son el mismo tipo de dato
+    —un ajuste por agente que puede venir de tres sitios— y tenerlos con formas
+    distintas es lo que hace que uno se quede sin conectar.
+    """
+    cfg = (agent_settings or {}).get(agent_name, {}) or {}
+    valor = cfg.get("temperature")
+    if valor is None:
+        valor = _load_agent_frontmatter(agent_name).get("temperature")
+    if valor is None:
+        return None
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Temperatura no numérica para '%s' (%r); se usa el default del proveedor.",
+            agent_name, valor,
+        )
+        return None
+
+
 def _record_usage(provider: str, model: str, entrada, salida) -> None:
     """Anotar tokens consumidos (SPEC-019/T5.2 y SPEC-014/T9.1).
 
@@ -302,6 +371,7 @@ async def call_llm(
 
     provider = settings.LLM_PROVIDER.lower()
     resolved_model = model or get_default_model()
+    temperature = _clamp_temperature(temperature, provider)
     _inicio = time.perf_counter()
 
     async def _medido(coro_factory):
@@ -368,12 +438,19 @@ async def call_llm_stream(
     system_prompt: Optional[str] = None,
     keep_alive: int = -1,
     num_ctx: Optional[int] = None,
+    temperature: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
-    """Call the configured LLM provider and yield the generated tokens."""
+    """Call the configured LLM provider and yield the generated tokens.
+
+    ``temperature``: igual que en :func:`call_llm`. Va también aquí porque el
+    redactor —el agente cuya temperatura más se nota— genera por streaming: sin
+    esto, el único agente que escribe el artículo se habría quedado fuera.
+    """
     from app.core.config import settings
 
     provider = settings.LLM_PROVIDER.lower()
     resolved_model = model or get_default_model()
+    temperature = _clamp_temperature(temperature, provider)
 
     if provider == "anthropic":
         stream_factory = lambda: _call_anthropic_stream(
@@ -381,6 +458,7 @@ async def call_llm_stream(
             model=resolved_model,
             timeout=timeout,
             system_prompt=system_prompt,
+            temperature=temperature,
         )
         what = f"Anthropic stream ({resolved_model})"
     elif provider == "openai":
@@ -389,6 +467,7 @@ async def call_llm_stream(
             model=resolved_model,
             timeout=timeout,
             system_prompt=system_prompt,
+            temperature=temperature,
         )
         what = f"OpenAI stream ({resolved_model})"
     else:
@@ -398,6 +477,7 @@ async def call_llm_stream(
             timeout=timeout,
             keep_alive=keep_alive,
             num_ctx=num_ctx,
+            temperature=temperature,
         )
         what = f"Ollama stream ({resolved_model})"
 
@@ -538,6 +618,7 @@ async def _call_ollama_stream(
     timeout: float,
     keep_alive: int = -1,
     num_ctx: Optional[int] = None,
+    temperature: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
     """Send a generation request with streaming enabled to local Ollama /api/generate."""
     from app.core.config import settings
@@ -547,6 +628,8 @@ async def _call_ollama_stream(
     options: dict = {}
     if num_ctx is not None:
         options["num_ctx"] = num_ctx
+    if temperature is not None:
+        options["temperature"] = temperature
     if options:
         payload["options"] = options
     if keep_alive != -1:
@@ -591,6 +674,7 @@ async def _call_openai_stream(
     model: str,
     timeout: float,
     system_prompt: Optional[str] = None,
+    temperature: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
     """Send a chat completion request with streaming enabled via the OpenAI Python SDK."""
     from app.core.config import settings
@@ -619,11 +703,10 @@ async def _call_openai_stream(
             # menudo rechazan ese parámetro. Una llamada rota es peor que una
             # métrica ausente, así que el streaming de OpenAI queda sin recuento
             # de tokens (la latencia sí se mide, como en el resto).
-            stream = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=True
-            )
+            crear_kwargs: dict = {"model": model, "messages": messages, "stream": True}
+            if temperature is not None:
+                crear_kwargs["temperature"] = temperature
+            stream = await client.chat.completions.create(**crear_kwargs)
             async for chunk in stream:
                 token = chunk.choices[0].delta.content or ""
                 if token:
@@ -797,6 +880,7 @@ async def _call_anthropic_stream(
     timeout: float,
     system_prompt: Optional[str] = None,
     max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream a generation request from Claude, yielding text deltas."""
     from app.core.config import settings
@@ -813,6 +897,8 @@ async def _call_anthropic_stream(
     }
     if system_prompt:
         create_kwargs["system"] = system_prompt
+    if temperature is not None:
+        create_kwargs["temperature"] = temperature
 
     client = AsyncAnthropic(**_anthropic_client_kwargs(api_key, timeout))
     try:

@@ -7,7 +7,9 @@ import yaml
 
 from app.platform.capabilities.rag import fetch_agent_context
 from app.platform.project_context import collection_for_state
-from app.platform.llm import call_llm, resolve_agent_model
+from app.platform.llm import (
+    call_llm, resolve_agent_model, resolve_agent_temperature,
+)
 from app.platform.projects.profiles import find as find_profile
 
 logger = logging.getLogger(__name__)
@@ -193,13 +195,18 @@ async def run_generic_agent(agent_name: str, state: Dict[str, Any]) -> Dict[str,
     # legado **si su namespace coincide** → default del proveedor. Un agente custom
     # quedaba fuera de esto y mandaba su `model:` de Ollama a cualquier proveedor.
     model = resolve_agent_model(agent_name, state.get("agent_settings"))
+    # Un agente custom declara su `temperature` en el `.agent.md` igual que los
+    # del núcleo; hasta ahora se leía y se descartaba.
+    temperature = resolve_agent_temperature(agent_name, state.get("agent_settings"))
     output_text = ""
     log(f"🤖 Modelo: {model}")
 
     # ── Standard (no tools) path ─────────────────────────────────────────
     log("⏳ Generando respuesta...")
     try:
-        output_text = await call_llm(prompt, model=model, timeout=300.0)
+        output_text = await call_llm(
+            prompt, model=model, timeout=300.0, temperature=temperature,
+        )
         log(f"✅ Respuesta generada ({len(output_text.split())} palabras).")
     except Exception as e:
         logger.error(f"LLM call failed for agent '{agent_name}': {e}")

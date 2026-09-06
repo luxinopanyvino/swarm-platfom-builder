@@ -6,7 +6,9 @@ from app.core.config import settings
 from app.platform.capabilities.binding import provider
 from app.platform.project_context import collection_for_state
 from app.platform.capabilities.rag import semantic_search_context, LIBRARY_AGENT
-from app.platform.llm import call_llm, call_llm_stream, resolve_agent_model
+from app.platform.llm import (
+    call_llm, call_llm_stream, resolve_agent_model, resolve_agent_temperature,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,10 @@ async def run_redactor(state: Dict[str, Any]) -> Dict[str, Any]:
     # Resolve per-agent config; model is provider-aware (SPEC-023/T12.3)
     agent_cfg = (state.get("agent_settings") or {}).get("redactor", {})
     model = resolve_agent_model("redactor", state.get("agent_settings"))
+    # Temperatura del agente (perfil o ajustes de la ejecución). Hasta ahora se
+    # guardaba y no llegaba a ningún proveedor: era un control de la interfaz
+    # que no hacía nada.
+    temperature = resolve_agent_temperature("redactor", state.get("agent_settings"))
     language = (agent_cfg.get("output_language") or "es").lower()
     custom_template = (agent_cfg.get("prompt_template") or "").strip()
     target_word_count = int(agent_cfg.get("target_word_count") or 0)
@@ -261,7 +267,10 @@ async def run_redactor(state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         draft_chunks = []
         generar = provider(state, "llm_stream", call_llm_stream)
-        async for token in generar(prompt, model=model, timeout=timeout, num_ctx=4096, keep_alive=0):
+        async for token in generar(
+            prompt, model=model, timeout=timeout, num_ctx=4096, keep_alive=0,
+            temperature=temperature,
+        ):
             emit_token(token)
             draft_chunks.append(token)
         draft_text = "".join(draft_chunks)
@@ -307,7 +316,10 @@ async def run_redactor(state: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 expanded_chunks = []
                 ampliar = provider(state, "llm_stream", call_llm_stream)
-                async for token in ampliar(expand_prompt, model=model, timeout=timeout, num_ctx=4096, keep_alive=0):
+                async for token in ampliar(
+                    expand_prompt, model=model, timeout=timeout, num_ctx=4096,
+                    keep_alive=0, temperature=temperature,
+                ):
                     emit_token(token)
                     expanded_chunks.append(token)
                 expanded = "".join(expanded_chunks)
