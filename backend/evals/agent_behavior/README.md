@@ -157,11 +157,39 @@ haber mirado es mentir con buena nota.
 Añadir una métrica es añadir un módulo en `metrics/` que se registre; el runner no
 se toca.
 
+## El gate de regresión (T9.5)
+
+```bash
+python -m evals.agent_behavior.gate            # el modo lo dice thresholds.yaml
+python -m evals.agent_behavior.gate --enforce  # forzar bloqueo
+```
+
+Corre el `golden` de cada agente y compara las medias por métrica contra
+`thresholds.yaml`. Lo dispara `.github/workflows/edd-gate.yml` en los PRs que tocan
+perfiles, prompts, adapters, el dispatcher, la siembra, el motor o este harness.
+
+Distingue **dos desenlaces que se parecen y no lo son**:
+
+| | Qué es | Modo aviso | Modo bloqueo |
+|---|---|---|---|
+| **Regresión** | una métrica baja de su umbral | informa, sale con 0 | sale con 1 |
+| **Medición rota** | dataset que no carga, caso que revienta, umbral sobre una métrica que no se computa | **sale con 1** | **sale con 1** |
+
+Lo segundo rompe siempre a propósito: no es que el agente haya empeorado, es que no
+se ha llegado a medir, y tragárselo dejaría un gate verde que no mira nada.
+
+Cada entrada de `thresholds.yaml` lleva `min` —lo que el gate exige, una decisión— y
+`baseline` —lo que puntuaba al declararlo—. El margen entre los dos es deliberado:
+con `min` = `baseline`, cualquier edición del dataset es roja y el gate se acaba
+desactivando. Si una regresión es deliberada, baja el umbral **en la misma PR**: así
+el relajo queda revisado en vez de ocurrir en silencio.
+
 ## Qué **no** hace todavía
 
-- El **gate en CI** con umbrales por agente es T9.5 (#226). El JSON del informe ya
-  trae `scores` y `passed`, y el runner ya sale con código 1, para no tener que
-  parsear prosa.
+- **El gate avisa, no bloquea** (`enforce: false`). Es lo que pide SPEC-014 §5, y
+  aquí tiene un motivo concreto: los conjuntos son `handwritten`, así que bloquear
+  con esa evidencia fijaría una línea base ficticia.
 - Los conjuntos aún no se han **grabado contra un modelo real** (ver
-  «procedencia»): mientras sean `handwritten`, un verde dice que las métricas
-  funcionan, no que el agente se comporte bien.
+  «procedencia»). Regrabarlos en `--mode live`, poner `provenance: recorded`,
+  recalcular los `baseline` y cambiar `enforce` a `true` es, en ese orden, lo que
+  convierte el gate en un gate de verdad.

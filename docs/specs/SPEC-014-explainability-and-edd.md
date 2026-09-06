@@ -117,10 +117,22 @@ los convierte en criterio de desarrollo.
   `decision`, leída con el mismo `decision_of` de T9.1. Los conjuntos son
   `handwritten` y el informe lo dice: fija qué mide cada métrica, no cómo se
   comporta el modelo — regrabarlos en `live` es el paso previo a endurecer T9.5.
-- [ ] **AC5** — *Given* un PR que toca perfiles, *prompts* o modelos de agentes
+- [x] **AC5** — *Given* un PR que toca perfiles, *prompts* o modelos de agentes
   (`backend/app/agents/*.agent.md`, `shared/llm.py`, `shared/agents_seed.py`),
   *When* corre la CI, *Then* el **gate EDD** ejecuta la suite de evals y **falla o
   avisa** si alguna métrica regresa por debajo de su umbral declarado.
+  <br>*T9.5 (#226)*: `evals/agent_behavior/gate.py` + `thresholds.yaml` +
+  `.github/workflows/edd-gate.yml`. **Las rutas que enumera este AC estaban
+  obsoletas**: `backend/app/agents/` y `shared/llm.py` se movieron en T8.3/T8.4, y
+  un gate que vigila rutas inexistentes da verde por no mirar nada — el workflow
+  vigila las de verdad y hay un test que lo comprueba. El gate distingue dos
+  desenlaces que se parecen: una **regresión** avisa (§5, porque los golden son
+  `handwritten` y bloquear con esa evidencia fijaría una línea base ficticia),
+  mientras que una **medición rota** —dataset que no carga, caso que revienta,
+  umbral sobre una métrica que no se computa— **rompe en los dos modos**: no es
+  que el agente haya empeorado, es que no se ha medido. El modo lo decide
+  `thresholds.yaml`, no el workflow, para que endurecerlo sea un diff junto a los
+  umbrales que endurece.
 - [ ] **AC6** — *Given* la disciplina EDD, *Then* está **documentada** (cuándo y
   cómo añadir un eval, DoR/DoD de evaluación, alcance limitado a modelos de la
   plataforma) y el área `area/evaluation` está dada de alta en validador, seed,

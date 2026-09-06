@@ -225,14 +225,25 @@ un módulo en `metrics/` que se registre; el runner no se toca. Los informes de
 `evals/results/` están ignorados por git.
 
 Hay dos familias de dataset y **no son intercambiables**: `<agente>-golden` pasa
-entero y es la línea base que usará el gate de T9.5; `<agente>-regressions` falla a
-propósito y documenta qué se detecta. Cada dataset declara `provenance`: hoy son
+entero y es la línea base del gate; `<agente>-regressions` falla a propósito y
+documenta qué se detecta. Cada dataset declara `provenance`: hoy son
 todos `handwritten` —salidas escritas a mano—, así que un verde dice que **la
 métrica** funciona, no que el modelo se comporte así; el informe lo avisa. La
 métrica `coherence` la juzga un modelo de la plataforma con rúbrica fija y
 `temperature=0`, y **el juez lo pide el runner, no la métrica**: por eso en
 `replay` no se llama a nadie y sin veredicto grabado la métrica se salta con
 motivo. Ver `evals/agent_behavior/README.md`.
+
+**Gate de regresión (T9.5)**: `python -m evals.agent_behavior.gate` corre los golden
+y compara contra `thresholds.yaml`; lo dispara `.github/workflows/edd-gate.yml` en
+PRs que tocan perfiles, prompts, adapters, el dispatcher, la siembra, el motor o el
+propio harness. Distingue dos cosas: una **regresión** avisa (hoy `enforce: false`,
+porque los golden son `handwritten`), y una **medición rota** —dataset que no carga,
+caso que revienta, umbral sobre una métrica que no se computa— **rompe siempre**. El
+modo lo decide `thresholds.yaml`, no el workflow. Si bajas un umbral, hazlo en la
+misma PR que lo provoca: así el relajo queda revisado. **No marques este check como
+obligatorio** en la protección de rama: tiene filtro de rutas y un check requerido
+que no corre bloquea la PR para siempre.
 
 ## graphify (grafo de conocimiento — tooling local)
 
