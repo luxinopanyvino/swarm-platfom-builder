@@ -20,6 +20,12 @@
 /frontend/Dockerfile                @luxinopanyvino
 /.github/                           @luxinopanyvino
 
+# Evaluación de agentes (EDD, SPEC-014). Relajar un umbral relaja la garantía de
+# comportamiento, y bajar uno «para que pase la PR» es indistinguible de arreglar
+# la regresión si nadie lo mira: se revisa como un cambio de seguridad.
+/backend/evals/                     @luxinopanyvino
+/.github/workflows/edd-gate.yml     @luxinopanyvino
+
 # Decisiones y gobernanza
 /docs/adr/                          @luxinopanyvino
 /docs/governance/                   @luxinopanyvino
