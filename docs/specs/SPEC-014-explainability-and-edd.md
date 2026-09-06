@@ -133,10 +133,21 @@ los convierte en criterio de desarrollo.
   que el agente haya empeorado, es que no se ha medido. El modo lo decide
   `thresholds.yaml`, no el workflow, para que endurecerlo sea un diff junto a los
   umbrales que endurece.
-- [ ] **AC6** — *Given* la disciplina EDD, *Then* está **documentada** (cuándo y
+- [x] **AC6** — *Given* la disciplina EDD, *Then* está **documentada** (cuándo y
   cómo añadir un eval, DoR/DoD de evaluación, alcance limitado a modelos de la
   plataforma) y el área `area/evaluation` está dada de alta en validador, seed,
   gobernanza y backlog.
+  <br>*T9.6 (#223)*: el alta del área ya estaba hecha en los cuatro sitios desde
+  E9; lo que faltaba era la **disciplina**, que es la mitad que de verdad gobierna.
+  [`docs/governance/edd-discipline.md`](../governance/edd-discipline.md) dice cuándo
+  hay que tocar los evals —incluida la regla de que **un agente nuevo llega con su
+  conjunto `golden`**, porque si no, nada defiende su comportamiento—, cómo se añade
+  uno, y la frontera con `model_benchmark`. La DoR y la DoD de evaluación se
+  enganchan a GOVERNANCE §5 y §6 en vez de vivir aparte, y su exigencia central es
+  que **una regresión aceptada se explica y se baja el umbral en la misma PR**: si
+  no, el relajo ocurre después y en silencio. `backend/evals/` y el workflow del
+  gate tienen dueño en CODEOWNERS, porque relajar un umbral relaja la garantía de
+  comportamiento.
 
 ## 4. Diseño propuesto
 

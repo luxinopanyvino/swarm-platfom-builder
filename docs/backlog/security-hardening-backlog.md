@@ -119,7 +119,9 @@ Labels: `epic`, `task`, `area/*`, `sev/{high,medium,low}`.
 > agentes/modelos **de la plataforma** por evaluación. Definición en
 > [SPEC-014](../specs/SPEC-014-explainability-and-edd.md) y
 > [ADR-0006](../adr/0006-adopt-evaluation-driven-development.md); las tareas se
-> materializan con `/sdd-sync --apply`.
+> materializan con `/sdd-sync --apply`. La disciplina —cuándo tocar los evals, cómo
+> se añade uno y la DoR/DoD de evaluación— está en
+> [edd-discipline.md](../governance/edd-discipline.md).
 
 | ID | Tarea | Sev |
 |----|-------|-----|

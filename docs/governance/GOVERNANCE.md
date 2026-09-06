@@ -91,6 +91,10 @@ Una tarea/épica está *Ready* cuando:
 - [ ] Riesgos y dependencias identificados.
 - [ ] Impacto de seguridad evaluado (¿toca auth, datos, egress, secretos?).
 - [ ] Plan de pruebas definido.
+- [ ] **Si toca agentes o modelos**, se cumple además la DoR de evaluación
+  ([edd-discipline.md §4](edd-discipline.md#4-dor-de-evaluación--antes-de-implementar)):
+  está dicho qué comportamiento puede romperse y qué métrica lo mediría — y si
+  ninguna lo mide, añadirla es parte de la tarea.
 - [ ] *(Recomendado, no bloqueante — [ADR-0007](../adr/0007-adopt-spec-kit-authoring-layer.md))*
   La spec pasó el pipeline de autoría Spec Kit: `/speckit-clarify` (ambigüedades
   resueltas) y `/speckit-checklist` del dominio dominante; `/speckit-analyze`
@@ -103,6 +107,11 @@ Una tarea/épica está *Ready* cuando:
 - [ ] Sin secretos en el diff; dependencias nuevas escaneadas.
 - [ ] Documentación/ADR/spec actualizados.
 - [ ] Observabilidad: logs/métricas relevantes añadidos si aplica.
+- [ ] **Si toca agentes o modelos**, se cumple además la DoD de evaluación
+  ([edd-discipline.md §5](edd-discipline.md#5-dod-de-evaluación--para-cerrar)): el
+  gate EDD pasa, o su regresión está **explicada y aceptada en la propia PR** —si el
+  comportamiento nuevo es el bueno, el umbral se baja en esa **misma PR**, no
+  después y en un commit que nadie relaciona con la causa.
 - [ ] Revisado y aprobado según la política de revisión.
 
 ## 7. Gestión del trabajo
@@ -167,6 +176,11 @@ Complementa al SDD para los componentes **probabilísticos** (agentes/modelos). 
   endurece tras fijar la línea base.
 - La **explicabilidad** ([SPEC-014](../specs/SPEC-014-explainability-and-edd.md)) es
   el sustrato de datos de las evals: traza auditable por paso de cada ejecución.
+
+Cuándo hay que tocar los evals, cómo se añade uno, y la DoR/DoD de evaluación están
+en **[edd-discipline.md](edd-discipline.md)**. `backend/evals/` y sus umbrales tienen
+dueño en [CODEOWNERS](../../.github/CODEOWNERS): relajar un umbral relaja la garantía
+de comportamiento, y se revisa como un cambio de seguridad.
 
 ## 8. Datos y cumplimiento
 
