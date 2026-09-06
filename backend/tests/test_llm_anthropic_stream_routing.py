@@ -26,7 +26,8 @@ async def test_call_llm_stream_routes_to_anthropic(monkeypatch):
     """call_llm_stream dispatches to the anthropic streamer with the default model."""
     seen = {}
 
-    async def fake_stream(prompt, model, timeout, system_prompt=None):
+    # `temperature` la añadió #320: el doble refleja la firma real.
+    async def fake_stream(prompt, model, timeout, system_prompt=None, temperature=None):
         seen["model"] = model
         seen["prompt"] = prompt
         for tok in ["Ho", "la", " mundo"]:
@@ -45,7 +46,7 @@ async def test_call_llm_stream_anthropic_retries_transient_before_first_token(mo
     """A connection-level failure before any token is retried on the anthropic path."""
     attempts = {"n": 0}
 
-    async def flaky(prompt, model, timeout, system_prompt=None):
+    async def flaky(prompt, model, timeout, system_prompt=None, temperature=None):
         attempts["n"] += 1
         if attempts["n"] < 2:
             raise TransientLLMError("all connection attempts failed")

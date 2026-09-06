@@ -185,9 +185,14 @@ async def run_investigador(state: Dict[str, Any]) -> Dict[str, Any]:
     # Always run synthesis — with or without external sources.
     # If no external content was found, the LLM uses its parametric knowledge.
     try:
-        from app.platform.llm import call_llm, resolve_agent_model
+        from app.platform.llm import (
+            call_llm, resolve_agent_model, resolve_agent_temperature,
+        )
         from app.core.config import settings as _settings
         model = resolve_agent_model("investigador", state.get("agent_settings"))
+        # Temperatura del agente (perfil o ajustes de la ejecución). Hasta ahora
+        # se guardaba y no llegaba a ningún proveedor.
+        temperature = resolve_agent_temperature("investigador", state.get("agent_settings"))
 
         # When there are no external sources, use a lightweight model for
         # parametric synthesis to avoid OOM when the next agent loads.
@@ -235,6 +240,7 @@ async def run_investigador(state: Dict[str, Any]) -> Dict[str, Any]:
             timeout=600.0 if research_chunks else 120.0,
             keep_alive=0,   # unload after synthesis — frees VRAM before redactor loads its model
             num_ctx=8192 if research_chunks else 2048,   # more context for multi-source synthesis
+            temperature=temperature,
         )
         if synthesis and len(synthesis.split()) > 30:
             research_chunks.append(f"[Síntesis] {synthesis}")

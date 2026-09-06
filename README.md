@@ -460,7 +460,7 @@ Cada agente es un **perfil** almacenado en la base de datos. Los campos configur
 | `name` / `slug` | string | Identificador único en el proyecto (ej: `mi-revisor`) |
 | `models` | mapa | **Modelo por proveedor** (ej: `{anthropic: claude-sonnet-5, ollama: llama3.2:3b}`). Es lo que hace que el agente funcione al cambiar de proveedor |
 | `model` | string | Modelo único, **heredado**. Solo se usa si su *namespace* coincide con el proveedor activo |
-| `temperature` | float 0-1 | Creatividad de las respuestas |
+| `temperature` | float | Creatividad de las respuestas. Se recorta al rango del proveedor activo: **Anthropic acepta 0-1** y rechaza más; OpenAI y Ollama llegan a 2 |
 | `prompt_template` | texto | Instrucciones del sistema para el agente |
 | `rag_enabled` | bool | Activa la búsqueda en la base documental |
 | `rag_collection` | string | Colección Qdrant sobre la que busca |
@@ -498,6 +498,20 @@ Sin el bloque `models:`, un agente cuyo `model:` sea un id de Ollama cae al mode
 por defecto del proveedor activo — lo correcto, pero no necesariamente el modelo que
 quieres para ese agente. Lo que **no** ocurre es que se mande un id de Ollama a la
 API de Claude: el paso 3 comprueba el namespace.
+
+### La temperatura se resuelve como el modelo
+
+Misma cascada, y por el mismo motivo: es un ajuste por agente que puede venir de
+tres sitios.
+
+1. la `temperature` de los ajustes de esa ejecución (donde el backend funde también
+   la del perfil en base de datos, que es la que edita la interfaz);
+2. la `temperature` del `.agent.md`;
+3. nada — y entonces manda el default del proveedor.
+
+Los valores por defecto están escalonados a propósito: el formateador en `0.1` y el
+revisor en `0.2` porque tienen que ser consistentes, el redactor en `0.7` porque
+tiene que escribir.
 
 ### Crear un agente nuevo desde la UI
 

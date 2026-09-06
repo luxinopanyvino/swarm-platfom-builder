@@ -118,7 +118,13 @@ Docker (`docker compose up --build`, backend en `:8080`).
 - **LLM**: `backend/app/platform/llm.py` es el dispatcher único
   Anthropic/Ollama/OpenAI (`LLM_PROVIDER`). Cada agente usa `keep_alive=0` para
   liberar VRAM al terminar y un `num_ctx` fijo — relevante si tocas
-  tiempos/memoria del pipeline.
+  tiempos/memoria del pipeline. **Modelo y temperatura por agente se resuelven con
+  la misma cascada** (`resolve_agent_model` / `resolve_agent_temperature`): ajustes
+  de la ejecución → `.agent.md` → default del proveedor. Si añades un agente que
+  llame al LLM, pásale las dos: hay un test que falla si resuelve una y no la pasa.
+  La temperatura se **recorta al rango del proveedor** dentro del dispatcher —
+  Anthropic devuelve 400 por encima de 1.0—, así que recorta también para quien
+  llame a `call_llm` directamente.
 - **Capacidades (T8.3)**: `backend/app/platform/capabilities/registry.py` declara
   las capacidades del motor (`rag`, `rag_results`, `llm`, `llm_stream`, `search`,
   `format`, `publish`) y `binding.py` las resuelve para un agente. Con

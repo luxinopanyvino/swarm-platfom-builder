@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 from app.core.config import settings
 from app.platform.capabilities.binding import provider
-from app.platform.llm import call_llm, resolve_agent_model
+from app.platform.llm import call_llm, resolve_agent_model, resolve_agent_temperature
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,10 @@ async def run_revisor(state: Dict[str, Any]) -> Dict[str, Any]:
     # Resolve model: provider-aware per-agent resolution (SPEC-023/T12.3)
     agent_cfg = (state.get("agent_settings") or {}).get("revisor", {})
     model = resolve_agent_model("revisor", state.get("agent_settings"))
+    # Temperatura del agente (perfil o ajustes de la ejecución). Hasta ahora se
+    # guardaba y no llegaba a ningún proveedor: era un control de la interfaz
+    # que no hacía nada.
+    temperature = resolve_agent_temperature("revisor", state.get("agent_settings"))
 
     logger.info(f"Running Revisor Agent with model: {model}")
     log(f"👁️ Evaluando borrador — modelo: {model} | iteración: {loop_count + 1} | {len(draft_text.split())} palabras")
@@ -50,7 +54,10 @@ async def run_revisor(state: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         evaluar = provider(state, "llm", call_llm)
-        raw_response = await evaluar(prompt, model=model, timeout=45.0, num_ctx=4096, keep_alive=0)
+        raw_response = await evaluar(
+            prompt, model=model, timeout=45.0, num_ctx=4096, keep_alive=0,
+            temperature=temperature,
+        )
         json_match = re.search(r"\{.*\}", raw_response, re.DOTALL)
         if json_match:
             try:
