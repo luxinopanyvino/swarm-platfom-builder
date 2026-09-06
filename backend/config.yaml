@@ -7,6 +7,12 @@ llm:
   # Cambia a 'ollama' (on-prem local) o 'openai' (compatible: vLLM/LM Studio) para
   # soberanía de datos. La variable de entorno LLM_PROVIDER tiene mayor prioridad.
   provider: anthropic
+  # Proveedor de EMBEDDINGS, independiente del de generación (#265): Anthropic no
+  # ofrece API de embeddings, así que los dos no pueden ser lo mismo. 'ollama' u
+  # 'openai'; vacío = comportamiento heredado, derivado de `provider` (openai si la
+  # generación es OpenAI, Ollama en cualquier otro caso). Declararlo permite generar
+  # con Claude y vectorizar con OpenAI. Un valor desconocido cae al heredado y avisa.
+  embed_provider: ""
 ollama:
   base_url: http://localhost:11434
   default_model: mistral:7b
