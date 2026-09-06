@@ -34,7 +34,9 @@ from app.models import (
     ArticleStatus,
     SavedFlowModel,
 )
-from app.platform.capabilities.rag import chunk_text, ensure_collection, upsert_chunks
+from app.platform.capabilities.rag import (
+    chunk_text, embed_vector_size, ensure_collection, upsert_chunks,
+)
 
 
 def dev_seed_enabled() -> bool:
@@ -224,7 +226,7 @@ async def _seed_default_rag_document(project_id) -> None:
     doc_id = "alejandria-welcome"
     filename = "bienvenida-alejandria-magazine.md"
     chunks = chunk_text(sample_text, chunk_size=settings.RAG_CHUNK_SIZE, overlap=settings.RAG_CHUNK_OVERLAP)
-    await ensure_collection(settings.QDRANT_URL, collection, settings.RAG_VECTOR_SIZE, settings.QDRANT_API_KEY)
+    await ensure_collection(settings.QDRANT_URL, collection, embed_vector_size(), settings.QDRANT_API_KEY)
     await upsert_chunks(
         settings.QDRANT_URL,
         collection,
@@ -234,7 +236,7 @@ async def _seed_default_rag_document(project_id) -> None:
         chunks,
         settings.OLLAMA_BASE_URL,
         settings.OLLAMA_EMBED_MODEL,
-        settings.RAG_VECTOR_SIZE,
+        embed_vector_size(),
         settings.QDRANT_API_KEY,
     )
 

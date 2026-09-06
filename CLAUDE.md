@@ -133,8 +133,15 @@ Docker (`docker compose up --build`, backend en `:8080`).
   `AGENT_ENGINE=adapters` (por defecto) no se inyecta nada y cada agente usa su
   import. Los dos caminos deben dar el mismo resultado — hay un test de paridad.
 - **RAG**: `backend/app/platform/capabilities/rag.py` (extracción PDF, chunking,
-  embeddings `nomic-embed-text` 768-dim, Qdrant). Busca en el bucket del agente +
-  la biblioteca `__library__`. No hay scraping web.
+  embeddings, Qdrant). Busca en el bucket del agente + la biblioteca
+  `__library__`. No hay scraping web. **El proveedor de embeddings es
+  independiente del de generación** (`EMBED_PROVIDER`, #265: Anthropic no tiene API
+  de embeddings) y **la dimensión del índice se deriva del modelo activo**
+  (`embed_vector_size()`), no de `RAG_VECTOR_SIZE` — ese ajuste solo manda para
+  modelos que la tabla no conoce. Si creas colecciones, usa `embed_vector_size()`:
+  hay un test que falla si un llamador vuelve al ajuste global. Una dimensión que no
+  cuadra **corta la indexación con 409** en vez de escribir pseudovectores de hash,
+  que es lo que hacía antes — en silencio y respondiendo «indexado».
 - **Aislamiento por proyecto (T8.5)**: el nombre de la colección de Qdrant **se
   deriva, no se recibe**. `backend/app/platform/project_context.py` es el único
   sitio que lo compone: `p_<project_id>__<bucket>`, donde el *bucket* es lo que

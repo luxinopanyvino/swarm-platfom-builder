@@ -45,6 +45,7 @@ from app.modules.agents.application.use_cases import (
 from app.platform.capabilities.rag import (
     extract_text, chunk_text, ensure_collection, upsert_chunks,
     list_documents, delete_document, get_rag_backend, backfill_doc_metadata,
+    EmbeddingDimensionMismatch, embed_vector_size,
 )
 from app.modules.agents.adapters.doc_metadata import extract_doc_metadata
 from app.platform.project_access import (
@@ -311,21 +312,26 @@ async def upload_to_rag_library(
     metadata = extract_doc_metadata(file.filename, raw, text)
     chunks = chunk_text(text, chunk_size=c_size, overlap=c_overlap)
 
-    await ensure_collection(settings.QDRANT_URL, col, settings.RAG_VECTOR_SIZE, settings.QDRANT_API_KEY)
-    count = await upsert_chunks(
-        qdrant_url=settings.QDRANT_URL,
-        collection=col,
-        doc_id=doc_id,
-        agent_name="__library__",
-        filename=file.filename,
-        chunks=chunks,
-        ollama_base_url=settings.OLLAMA_BASE_URL,
-        embedding_model=settings.OLLAMA_EMBED_MODEL,
-        vector_size=settings.RAG_VECTOR_SIZE,
-        api_key=settings.QDRANT_API_KEY,
-        doc_title=metadata.get("title", ""),
-        doc_authors=metadata.get("authors", ""),
-    )
+    await ensure_collection(settings.QDRANT_URL, col, embed_vector_size(), settings.QDRANT_API_KEY)
+    # Una dimensión que no cuadra es configuración, no un fallo del servicio: 409
+    # con el motivo, en vez de un 500 con traza o —peor— un 200 sobre ruido.
+    try:
+        count = await upsert_chunks(
+            qdrant_url=settings.QDRANT_URL,
+            collection=col,
+            doc_id=doc_id,
+            agent_name="__library__",
+            filename=file.filename,
+            chunks=chunks,
+            ollama_base_url=settings.OLLAMA_BASE_URL,
+            embedding_model=settings.OLLAMA_EMBED_MODEL,
+            vector_size=embed_vector_size(),
+            api_key=settings.QDRANT_API_KEY,
+            doc_title=metadata.get("title", ""),
+            doc_authors=metadata.get("authors", ""),
+        )
+    except EmbeddingDimensionMismatch as error:
+        raise HTTPException(status_code=409, detail=str(error))
 
     if count <= 0:
         raise HTTPException(status_code=502, detail="No se pudo indexar el documento")
@@ -600,22 +606,25 @@ async def upload_rag_document(
     chunks = chunk_text(text, chunk_size=rag_settings["chunk_size"], overlap=rag_settings["chunk_overlap"])
     collection = rag_settings["collection"]
 
-    await ensure_collection(settings.QDRANT_URL, collection, settings.RAG_VECTOR_SIZE, settings.QDRANT_API_KEY)
+    await ensure_collection(settings.QDRANT_URL, collection, embed_vector_size(), settings.QDRANT_API_KEY)
 
-    count = await upsert_chunks(
-        qdrant_url=settings.QDRANT_URL,
-        collection=collection,
-        doc_id=doc_id,
-        agent_name=agent_name,
-        filename=file.filename,
-        chunks=chunks,
-        ollama_base_url=settings.OLLAMA_BASE_URL,
-        embedding_model=settings.OLLAMA_EMBED_MODEL,
-        vector_size=settings.RAG_VECTOR_SIZE,
-        api_key=settings.QDRANT_API_KEY,
-        doc_title=metadata.get("title", ""),
-        doc_authors=metadata.get("authors", ""),
-    )
+    try:
+        count = await upsert_chunks(
+            qdrant_url=settings.QDRANT_URL,
+            collection=collection,
+            doc_id=doc_id,
+            agent_name=agent_name,
+            filename=file.filename,
+            chunks=chunks,
+            ollama_base_url=settings.OLLAMA_BASE_URL,
+            embedding_model=settings.OLLAMA_EMBED_MODEL,
+            vector_size=embed_vector_size(),
+            api_key=settings.QDRANT_API_KEY,
+            doc_title=metadata.get("title", ""),
+            doc_authors=metadata.get("authors", ""),
+        )
+    except EmbeddingDimensionMismatch as error:
+        raise HTTPException(status_code=409, detail=str(error))
 
     if count <= 0:
         raise HTTPException(status_code=502, detail="No se pudo indexar el documento en Qdrant")
