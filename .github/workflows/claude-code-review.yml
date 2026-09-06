@@ -31,7 +31,7 @@ jobs:
     # No revisar PRs en borrador.
     if: github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
