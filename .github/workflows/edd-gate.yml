@@ -1,0 +1,86 @@
+name: Gate EDD
+
+# SPEC-014 / T9.5 / AC5: cuando un PR toca perfiles, prompts o modelos de agentes,
+# se corre la suite de evals y se comparan las métricas contra los umbrales
+# declarados en `backend/evals/agent_behavior/thresholds.yaml`.
+#
+# Va en su propio workflow y no como un job de `ci.yml` porque el filtro de rutas de
+# GitHub Actions se aplica al workflow entero, no a un job: meterlo en `ci.yml`
+# obligaría a correr todo el CI para filtrar después, o a añadir una acción de
+# terceros solo para eso.
+#
+# ⚠️ **No marcar este check como obligatorio en la protección de rama.** Un workflow
+# con filtro de rutas no se ejecuta cuando el PR no toca esas rutas, y un check
+# requerido que nunca corre deja la PR bloqueada para siempre esperándolo.
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      # Los perfiles y prompts de los agentes de cada proyecto (T8.4).
+      - "backend/projects/**/agents/*.agent.md"
+      # La forma del pipeline: secuencia, bucles y capacidades de cada agente.
+      - "backend/projects/**/template.yaml"
+      # Donde viven los prompts de verdad de los agentes con adapter propio.
+      - "backend/app/modules/agents/adapters/**"
+      # El dispatcher: modelo por agente, parámetros y proveedor.
+      - "backend/app/platform/llm.py"
+      # La siembra, que fija modelo y temperature por agente.
+      - "backend/app/shared/agents_seed.py"
+      # El motor que resuelve qué corre cada nodo.
+      - "backend/app/platform/engine/**"
+      # Y el propio harness: cambiar una métrica, un dataset o un umbral también
+      # cambia lo que este gate afirma.
+      - "backend/evals/agent_behavior/**"
+      - ".github/workflows/edd-gate.yml"
+
+concurrency:
+  group: edd-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: EDD · regresión de comportamiento
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DEBUG: "true"
+      SECRET_KEY: "ci-secret-not-for-prod"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Instalar dependencias desde el lock
+        run: pip install --require-hashes -r requirements.txt
+
+      - name: Ejecutar el gate
+        # El modo —aviso o bloqueo— lo decide `thresholds.yaml`, no este fichero:
+        # endurecerlo debe ser un diff revisable junto a los umbrales que endurece,
+        # no un cambio de infraestructura. El gate corre en modo `replay`, así que
+        # no necesita Ollama ni clave de proveedor.
+        run: |
+          python -m evals.agent_behavior.gate --json "$RUNNER_TEMP/edd-gate.json" \
+            | tee "$RUNNER_TEMP/edd-gate.md"
+
+      - name: Publicar el informe en el resumen del job
+        if: always()
+        # Para no tener que abrir los logs: la tabla de métricas con su margen
+        # aparece en la portada de la ejecución.
+        run: cat "$RUNNER_TEMP/edd-gate.md" >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Guardar el informe como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edd-gate-report
+          path: |
+            ${{ runner.temp }}/edd-gate.json
+            ${{ runner.temp }}/edd-gate.md
+          if-no-files-found: warn

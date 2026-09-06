@@ -1,0 +1,77 @@
+# Umbrales del gate EDD — SPEC-014 / T9.5 / AC5.
+#
+# Qué es esto: el mínimo que cada métrica puede puntuar en el conjunto `golden` de
+# cada agente. El gate corre los golden y compara contra estos números; por debajo,
+# hay regresión.
+#
+# ── Por qué el gate arranca en modo aviso ────────────────────────────────────
+# SPEC-014 §5 pide arrancar avisando y endurecer «tras recolectar línea base». Aquí
+# esa cautela tiene un motivo concreto y no es formalismo: **los conjuntos golden son
+# `handwritten`** (T9.4) — sus salidas se escribieron a mano, no se grabaron de una
+# ejecución real del agente. Un verde dice que las métricas funcionan, no que el
+# modelo se comporte así. Bloquear una PR con esa evidencia sería fijar una línea
+# base ficticia.
+#
+# Para endurecerlo: regraba los golden con `--mode live` contra el modelo de la
+# plataforma, pon su `provenance` en `recorded`, recalcula los `baseline` de abajo y
+# cambia `enforce` a `true`. El cambio de modo es un diff revisable, que es
+# exactamente lo que debe ser.
+#
+# ── Cómo leer cada entrada ───────────────────────────────────────────────────
+#   min:      lo que el gate exige. Es una decisión, no «lo que puntúa hoy».
+#   baseline: lo que puntuaba al declararlo, para ver el margen sin repetir la
+#             historia y para saber cuánto ha derivado algo antes de romperse.
+#
+# El margen entre `baseline` y `min` es deliberado: con `min` = `baseline` el gate se
+# convierte en un trinquete donde cualquier cambio del dataset es rojo, y un gate que
+# molesta sin distinguir se acaba desactivando.
+
+version: 1
+
+# `false` = el gate informa y sale con 0. `true` = una regresión rompe la PR.
+# Un fallo del propio harness (dataset roto, caso que revienta) rompe la PR en los
+# dos modos: eso no es una regresión del agente, es que la medición no se hizo.
+enforce: false
+
+# Cuándo y con qué se tomaron los `baseline` de abajo.
+baseline_taken:
+  date: "2026-09-06"
+  mode: replay
+  provenance: handwritten
+
+agents:
+  investigador:
+    dataset: investigador-golden
+    metrics:
+      # Es la métrica que da sentido al RAG de este agente: si cita algo que no está
+      # en el corpus, se lo ha inventado. No se admite margen.
+      citation_fidelity: {min: 100, baseline: 100.0}
+      # Coherencia la juzga un modelo con rúbrica fija; su número tiene más ruido
+      # que el de una expresión regular, así que el margen es mayor.
+      coherence: {min: 70, baseline: 84.0}
+      # El presupuesto puntúa margen, no aprobado: bajar aquí significa que el
+      # agente consume más para lo mismo.
+      budget: {min: 60, baseline: 73.75}
+
+  redactor:
+    dataset: redactor-golden
+    metrics:
+      citation_fidelity: {min: 100, baseline: 100.0}
+      # Estructura y estilo de cita son verificables sin opinar: o están o no.
+      format_compliance: {min: 100, baseline: 100.0}
+      coherence: {min: 70, baseline: 88.0}
+      budget: {min: 60, baseline: 73.33}
+
+  revisor:
+    dataset: revisor-golden
+    metrics:
+      # La que importa de este agente: un revisor descalibrado rompe el pipeline
+      # con un número perfectamente formado. El margen es corto a propósito.
+      reviewer_calibration: {min: 80, baseline: 91.67}
+      budget: {min: 60, baseline: 79.58}
+
+  formateador:
+    dataset: formateador-golden
+    metrics:
+      format_compliance: {min: 100, baseline: 100.0}
+      budget: {min: 60, baseline: 83.33}
