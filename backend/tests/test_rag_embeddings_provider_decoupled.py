@@ -168,20 +168,19 @@ def test_la_ruta_se_decide_en_un_solo_sitio():
 # ── La trampa que este ajuste hace alcanzable ───────────────────────────────
 
 @pytest.mark.asyncio
-async def test_una_dimension_que_no_cuadra_se_avisa_en_vez_de_degradarse_callando(
-    proveedores, monkeypatch, caplog,
+async def test_una_dimension_que_no_cuadra_corta_en_vez_de_degradarse_callando(
+    proveedores, monkeypatch,
 ):
     """El riesgo real de poder elegir proveedor: `nomic-embed-text` da 768 y
-    `text-embedding-3-small` 1536, pero `RAG_VECTOR_SIZE` es **global**. Con la
-    dimensión equivocada, cada vector se descartaba y se sustituía por un
-    pseudovector de hash — sin error, sin aviso—: el RAG queda indexado y **no
-    encuentra nada**, y eso se descubre semanas después.
+    `text-embedding-3-small` 1536, pero la dimensión del índice es una sola. Con la
+    equivocada, cada vector se descartaba y se sustituía por un pseudovector de hash
+    — sin error—: el RAG quedaba indexado y **no encontraba nada**.
 
-    No se cambia el respaldo, que existe para que un proveedor caído no tumbe la
-    subida. Se cambia que no se pueda no enterarse.
+    #265 lo dejó avisando en el log. **#322 lo corta**: seguir indexando ruido y
+    responder «indexado» es la peor combinación, porque el dato parece bueno y nadie
+    vuelve a mirarlo. El respaldo se conserva solo para lo que sí es transitorio —un
+    proveedor caído—, que es el test siguiente.
     """
-    import logging
-
     proveedores("anthropic", "openai")
 
     async def _otra_dimension(text):
@@ -189,15 +188,8 @@ async def test_una_dimension_que_no_cuadra_se_avisa_en_vez_de_degradarse_calland
 
     monkeypatch.setattr(rag, "_get_embedding_openai", _otra_dimension)
     monkeypatch.setattr(rag, "is_qdrant_available", _si)
-    enviados = {}
 
-    async def _upsert_falso(url, json=None, headers=None, **kwargs):
-        enviados["puntos"] = (json or {}).get("points", [])
-        return _RespuestaOk()
-
-    monkeypatch.setattr(rag.httpx.AsyncClient, "put", _upsert_falso, raising=False)
-
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(rag.EmbeddingDimensionMismatch) as error:
         await rag.upsert_chunks(
             qdrant_url="http://qdrant:6333", collection="c", doc_id="d",
             agent_name="investigador", filename="paper.pdf",
@@ -206,11 +198,9 @@ async def test_una_dimension_que_no_cuadra_se_avisa_en_vez_de_degradarse_calland
             embedding_model="nomic-embed-text", vector_size=768,
         )
 
-    avisos = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("dimensión" in a for a in avisos), avisos
-    assert any("RAG_VECTOR_SIZE" in a for a in avisos), avisos
-    # Y se avisa **una vez por documento**, no una por fragmento: tres chunks, un aviso.
-    assert sum(1 for a in avisos if "dimensión" in a) == 1
+    # El mensaje dice qué arreglar, no solo que falló.
+    mensaje = str(error.value)
+    assert "reindexa" in mensaje and "paper.pdf" in mensaje
 
 
 @pytest.mark.asyncio

@@ -198,6 +198,74 @@ def get_embed_provider() -> str:
     return "openai" if settings.LLM_PROVIDER.lower() == "openai" else "ollama"
 
 
+#: Dimensión que produce cada modelo de embeddings conocido. No es exhaustivo ni
+#: pretende serlo: es el conjunto que el repo usa o documenta. Un modelo que no esté
+#: aquí cae a `RAG_VECTOR_SIZE`, que es lo que había antes.
+DIMENSIONES_CONOCIDAS = {
+    # Ollama
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 1024,
+    "all-minilm": 384,
+    "snowflake-arctic-embed": 1024,
+    # OpenAI
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+}
+
+
+class EmbeddingDimensionMismatch(RuntimeError):
+    """El proveedor produce vectores de otro tamaño que el índice.
+
+    Es una **mala configuración**, no un fallo transitorio: no se arregla sola y
+    cada documento que se indexe mientras tanto es ruido con aspecto de dato.
+    """
+
+
+def embed_model() -> str:
+    """Modelo de embeddings del proveedor activo."""
+    from app.core.config import settings
+
+    if get_embed_provider() == "openai":
+        return settings.OPENAI_EMBED_MODEL
+    return settings.OLLAMA_EMBED_MODEL
+
+
+def embed_vector_size() -> int:
+    """Dimensión que **de verdad** va a producir el proveedor activo (#265).
+
+    `RAG_VECTOR_SIZE` es un ajuste global con un default de 768 —la dimensión de
+    `nomic-embed-text`—, así que no distingue «lo he puesto a 768 a propósito» de
+    «nadie lo ha tocado». Con `EMBED_PROVIDER=openai` y ese default, cada vector de
+    1536 se descartaba y se sustituía por un pseudovector de hash: el índice queda
+    lleno de ruido y **no da ningún error**.
+
+    Por eso la dimensión del modelo manda sobre el ajuste global cuando se conoce:
+    es un dato del modelo, no una preferencia. Si el modelo no está en la tabla
+    —uno propio, o un servidor compatible— se respeta `RAG_VECTOR_SIZE`, que es el
+    comportamiento anterior. Y si los dos se conocen y **no coinciden**, se avisa:
+    seguir en silencio es lo que causó el problema.
+    """
+    from app.core.config import settings
+
+    configurada = int(getattr(settings, "RAG_VECTOR_SIZE", 768) or 768)
+    modelo = (embed_model() or "").strip()
+    # `nomic-embed-text:latest` y `nomic-embed-text` son el mismo modelo.
+    conocida = DIMENSIONES_CONOCIDAS.get(modelo.split(":", 1)[0].lower())
+
+    if conocida is None:
+        return configurada
+    if conocida != configurada:
+        logger.warning(
+            "RAG_VECTOR_SIZE=%d no es la dimensión de '%s' (%d). Se usa %d, la del "
+            "modelo: un vector de otro tamaño se descartaría y se indexaría ruido. "
+            "Ajusta RAG_VECTOR_SIZE y **reindexa** — un índice creado con la "
+            "dimensión anterior no sirve.",
+            configurada, modelo, conocida, conocida,
+        )
+    return conocida
+
+
 async def get_embedding(text: str, ollama_base_url: str, model: str) -> Optional[List[float]]:
     """
     Request an embedding vector from the embeddings provider.
@@ -281,8 +349,43 @@ async def ensure_collection(
                 }
                 await client.put(f"/collections/{collection}", json=payload)
                 logger.info(f"Created Qdrant collection '{collection}' with size={vector_size}")
+                return
+
+            # Una colección que ya existe **no se recrea**, así que su dimensión es
+            # la del día que se creó. Si el proveedor de embeddings cambió desde
+            # entonces, cada vector nuevo se descartaría y se indexaría ruido, sin
+            # que nada avise. Aquí es donde se puede ver, y hasta ahora no se
+            # miraba.
+            if check.status_code == 200:
+                existente = _collection_vector_size(check.json())
+                if existente is not None and existente != vector_size:
+                    logger.warning(
+                        "La colección '%s' se creó con vectores de %d y el proveedor "
+                        "de embeddings activo ('%s' / '%s') produce %d. Lo que se "
+                        "indexe ahora **no será recuperable**: hay que recrear la "
+                        "colección y reindexar sus documentos.",
+                        collection, existente, get_embed_provider(), embed_model(),
+                        vector_size,
+                    )
     except Exception as e:
         logger.warning(f"Could not ensure Qdrant collection '{collection}': {e}")
+
+
+def _collection_vector_size(cuerpo: dict) -> Optional[int]:
+    """Dimensión declarada de una colección, o `None` si no se puede leer.
+
+    Qdrant devuelve `vectors` como un entero, como `{"size": n}` o como un mapa de
+    vectores con nombre. No merece la pena adivinar en el último caso: se devuelve
+    `None` y no se avisa, que es mejor que avisar de algo que no se ha entendido.
+    """
+    try:
+        vectores = ((cuerpo or {}).get("result") or {}).get("config", {}).get("params", {}).get("vectors")
+    except AttributeError:
+        return None
+    if isinstance(vectores, dict):
+        tamano = vectores.get("size")
+        return int(tamano) if isinstance(tamano, int) else None
+    return int(vectores) if isinstance(vectores, int) else None
 
 
 async def upsert_chunks(
@@ -358,17 +461,20 @@ async def upsert_chunks(
         for idx, vec in results:
             vectors[idx] = vec
 
-    # Se avisa una vez por documento, no por fragmento: un PDF de 200 chunks
-    # llenaría el log y el aviso dejaría de leerse.
+    # Una dimensión que no cuadra es determinista: o falla en todos los fragmentos
+    # o en ninguno. Escribirlos como pseudovectores dejaría el índice lleno de ruido
+    # **y la subida diciendo que fue bien**, que es la peor combinación posible: el
+    # dato parece bueno y nadie vuelve a mirar. Se corta aquí.
     if caidas["tamano"]:
-        logger.warning(
-            "%d/%d fragmentos de '%s' se han indexado con un pseudovector: el "
-            "proveedor de embeddings ('%s') devuelve vectores de otra dimensión que "
-            "la declarada en RAG_VECTOR_SIZE=%d. El documento queda indexado pero "
-            "**no se podrá recuperar por significado**. Ajusta RAG_VECTOR_SIZE al "
-            "modelo, o EMBED_PROVIDER al índice existente, y reindexa.",
-            caidas["tamano"], len(chunks), filename, get_embed_provider(), vector_size,
+        raise EmbeddingDimensionMismatch(
+            f"El proveedor de embeddings ('{get_embed_provider()}' / "
+            f"'{embed_model()}') produce vectores de otra dimensión que la del "
+            f"índice ({vector_size}). No se indexa '{filename}': hacerlo llenaría "
+            f"la colección de ruido. Ajusta el modelo o RAG_VECTOR_SIZE, recrea la "
+            f"colección y reindexa."
         )
+    # El proveedor caído sí es transitorio: se indexa con el respaldo y se avisa,
+    # porque perder la subida entera por una caída momentánea sería peor.
     if caidas["sin_embedding"]:
         logger.warning(
             "%d/%d fragmentos de '%s' se han indexado con un pseudovector porque el "
