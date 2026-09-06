@@ -458,7 +458,8 @@ Cada agente es un **perfil** almacenado en la base de datos. Los campos configur
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `name` / `slug` | string | Identificador único en el proyecto (ej: `mi-revisor`) |
-| `model` | string | Modelo LLM a usar (ej: `llama3.2:1b`, `gpt-4o-mini`) |
+| `models` | mapa | **Modelo por proveedor** (ej: `{anthropic: claude-sonnet-5, ollama: llama3.2:3b}`). Es lo que hace que el agente funcione al cambiar de proveedor |
+| `model` | string | Modelo único, **heredado**. Solo se usa si su *namespace* coincide con el proveedor activo |
 | `temperature` | float 0-1 | Creatividad de las respuestas |
 | `prompt_template` | texto | Instrucciones del sistema para el agente |
 | `rag_enabled` | bool | Activa la búsqueda en la base documental |
@@ -468,6 +469,35 @@ Cada agente es un **perfil** almacenado en la base de datos. Los campos configur
 | `output_language` | string | Idioma de salida (ej: `spanish`, `english`) |
 | `scientific_format` | enum | `apa` · `ieee` · `vancouver` · `none` |
 | `target_word_count` | int | Extensión objetivo en palabras |
+
+### Elegir el modelo: `models` frente a `model`
+
+El modelo de un agente **depende del proveedor activo** (`LLM_PROVIDER`), así que un
+valor único no vale para todos. La resolución sigue esta cascada
+([SPEC-023](docs/specs/SPEC-023-claude-default-engine.md) AC3):
+
+1. el `model` que se pase en los ajustes de esa ejecución;
+2. `models[<proveedor>]` del `.agent.md`;
+3. el `model` heredado, **solo si su namespace coincide** con el proveedor;
+4. el modelo por defecto del proveedor.
+
+Por eso un agente propio conviene que declare `models:` con al menos el proveedor
+por defecto (`anthropic`):
+
+```yaml
+---
+name: mi-agente
+models:
+  anthropic: claude-sonnet-5
+  ollama: llama3.2:3b
+temperature: 0.7
+---
+```
+
+Sin el bloque `models:`, un agente cuyo `model:` sea un id de Ollama cae al modelo
+por defecto del proveedor activo — lo correcto, pero no necesariamente el modelo que
+quieres para ese agente. Lo que **no** ocurre es que se mande un id de Ollama a la
+API de Claude: el paso 3 comprueba el namespace.
 
 ### Crear un agente nuevo desde la UI
 
