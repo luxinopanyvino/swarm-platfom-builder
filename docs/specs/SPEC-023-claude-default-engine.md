@@ -74,6 +74,15 @@ directamente** — sin tocar código.
   su namespace coincide) → `get_default_model()`**; verificable con un test de
   resolución por proveedor (anthropic y ollama dan modelos distintos para el mismo
   agente).
+  <br>*Alcance completado (#264)*: T12.3 lo aplicó a los **cuatro agentes del
+  núcleo**; `adapters/generic.py` —el runner de los agentes **custom**, los que se
+  definen con un `.agent.md`— se quedó fuera y leía un `profile["model"]` con un
+  `or "llama3.2:1b"` de respaldo. Con el default `LLM_PROVIDER=anthropic` eso
+  mandaba un identificador de Ollama a la API de Claude, y solo le pasaba a quien
+  hubiera creado un agente propio. Este AC no excluye a los custom, así que ahora
+  el runner llama a `resolve_agent_model`; y el diccionario del perfil **deja de
+  llevar clave `model`**, porque cuál es el modelo depende del proveedor activo y
+  dos sitios que lo resuelven es lo que causó el fallo.
 - [ ] **AC4** — *Given* el mapeo por defecto (§4) con proveedor `anthropic`, *Then*
   investigador→`claude-opus-5`, redactor→`claude-sonnet-5`,
   revisor→`claude-sonnet-5`, formateador→`claude-haiku-4-5`, y

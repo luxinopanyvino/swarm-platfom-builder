@@ -7,7 +7,7 @@ import yaml
 
 from app.platform.capabilities.rag import fetch_agent_context
 from app.platform.project_context import collection_for_state
-from app.platform.llm import call_llm, get_default_model
+from app.platform.llm import call_llm, resolve_agent_model
 from app.platform.projects.profiles import find as find_profile
 
 logger = logging.getLogger(__name__)
@@ -47,9 +47,14 @@ def load_agent_profile(agent_name: str) -> Optional[Dict[str, Any]]:
                     pass
                 body = parts[2]
 
+        # Sin clave `model`: cuál es el modelo de un agente **depende del proveedor
+        # activo**, así que un valor estático en este diccionario es incorrecto por
+        # construcción. Lo resuelve `resolve_agent_model` (SPEC-023/AC3), que lee el
+        # bloque `models:` de este mismo fichero. Antes había aquí un
+        # `or "llama3.2:1b"` —un id de Ollama— que con `LLM_PROVIDER=anthropic`
+        # viajaba tal cual a la API de Claude.
         return {
             "name": agent_name,
-            "model": frontmatter.get("model") or "llama3.2:1b",
             "temperature": frontmatter.get("temperature", 0.7),
             "prompt_template": frontmatter.get("prompt_template", "").strip(),
             "rag_enabled": frontmatter.get("rag_enabled", False),
@@ -105,7 +110,6 @@ async def run_generic_agent(agent_name: str, state: Dict[str, Any]) -> Dict[str,
         logger.warning(f"No profile found for '{agent_name}', running with defaults")
         profile = {
             "name": agent_name,
-            "model": get_default_model(),
             "temperature": 0.7,
             "prompt_template": "",
             "rag_enabled": False,
@@ -184,7 +188,11 @@ async def run_generic_agent(agent_name: str, state: Dict[str, Any]) -> Dict[str,
     template = profile["prompt_template"] or _DEFAULT_TEMPLATE
     prompt = _render_template(template, agent_name, state, rag_context)
 
-    model = profile["model"] or get_default_model()
+    # Misma cascada que los agentes del núcleo (SPEC-023/AC3):
+    # `agent_settings.model` → `models[<proveedor>]` del `.agent.md` → `model`
+    # legado **si su namespace coincide** → default del proveedor. Un agente custom
+    # quedaba fuera de esto y mandaba su `model:` de Ollama a cualquier proveedor.
+    model = resolve_agent_model(agent_name, state.get("agent_settings"))
     output_text = ""
     log(f"🤖 Modelo: {model}")
 
