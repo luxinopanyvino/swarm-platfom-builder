@@ -47,6 +47,12 @@ directamente** — sin tocar código.
   Ollama/OpenAI); auto-selección dinámica de modelo por coste/latencia; router
   multi-modelo en caliente; migrar el proveedor de embeddings (posible
   `EMBED_PROVIDER` futuro, fuera de alcance).
+  <br>*Actualización (#265)*: ese «`EMBED_PROVIDER` futuro» ya existe. Sigue siendo
+  cierto el no-objetivo de fondo —**no** hay embeddings vía Anthropic, porque no hay
+  API— pero la elección del proveedor de embeddings ha dejado de derivarse de
+  `LLM_PROVIDER`: era un solo ajuste decidiendo dos cosas, y hacía imposible generar
+  con Claude y vectorizar con OpenAI. Sin declararlo, el comportamiento es idéntico
+  al de AC6. Ver `platform/capabilities/rag.py::get_embed_provider`.
 
 ## Clarifications
 

@@ -125,6 +125,14 @@ class Settings(BaseModel):
     # by configuration (env var or config.yaml), no code change required.
     LLM_PROVIDER: str = "anthropic"
 
+    #: Proveedor de **embeddings**, independiente del de generación (#265).
+    #: Anthropic no ofrece API de embeddings, así que los dos no pueden ser lo
+    #: mismo. Vacío = comportamiento heredado, que se deriva de `LLM_PROVIDER`:
+    #: `openai` si la generación es OpenAI, y Ollama en cualquier otro caso —
+    #: incluido `anthropic`—. Resuélvelo siempre con `get_embed_provider()`, nunca
+    #: leyendo este campo: el valor vacío no dice cuál es.
+    EMBED_PROVIDER: str = ""
+
     # LLM resilience — automatic retry of transient failures (connection refused,
     # timeouts, 5xx, empty responses) with exponential backoff + jitter.
     LLM_MAX_RETRIES: int = 3          # extra attempts after the first try (0 disables)
@@ -255,6 +263,8 @@ def _build_settings() -> Settings:
         "MINIO_ROOT_PASSWORD": minio.get("root_password", "minioadmin"),
         # LLM provider
         "LLM_PROVIDER": yaml_config.get("llm", {}).get("provider", "anthropic"),
+        # Embeddings: independiente del de generación (#265). Vacío = derivarlo.
+        "EMBED_PROVIDER": yaml_config.get("llm", {}).get("embed_provider", ""),
         "LLM_MAX_RETRIES": yaml_config.get("llm", {}).get("max_retries", 3),
         "LLM_RETRY_BASE_DELAY": yaml_config.get("llm", {}).get("retry_base_delay", 1.0),
         "LLM_RETRY_MAX_DELAY": yaml_config.get("llm", {}).get("retry_max_delay", 10.0),

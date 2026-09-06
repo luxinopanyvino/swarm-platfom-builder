@@ -163,20 +163,51 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
 # Embeddings — provider-aware (Ollama or OpenAI-compatible)
 # ---------------------------------------------------------------------------
 
+#: Proveedores que saben producir embeddings. Anthropic **no** está y no puede
+#: estar: no ofrece API de embeddings. Que la generación sea Claude no implica que
+#: los embeddings lo sean, y esa es toda la razón de que exista este módulo aparte.
+EMBED_PROVIDERS = ("ollama", "openai")
+
+
+def get_embed_provider() -> str:
+    """Proveedor de embeddings efectivo (#265, sobre SPEC-023/AC6).
+
+    `EMBED_PROVIDER` es **independiente** de `LLM_PROVIDER`: permite generar con
+    Claude y vectorizar con OpenAI, que antes era imposible porque la elección se
+    derivaba de un solo ajuste.
+
+    Vacío o desconocido → se **deriva** del proveedor de generación, que es el
+    comportamiento heredado: `openai` si la generación es OpenAI, y Ollama en
+    cualquier otro caso. Así un despliegue que no declare nada se comporta
+    exactamente igual que antes; y uno que declare una errata cae al camino que
+    funcionaba en vez de romperse — con un aviso, porque una errata silenciosa
+    mandaría todos los vectores a un proveedor distinto del que se pidió, y eso no
+    da error: da un RAG que no encuentra nada, mucho después.
+    """
+    from app.core.config import settings  # lazy to avoid circular imports
+
+    declarado = (getattr(settings, "EMBED_PROVIDER", "") or "").strip().lower()
+    if declarado in EMBED_PROVIDERS:
+        return declarado
+    if declarado:
+        logger.warning(
+            "EMBED_PROVIDER='%s' no es un proveedor de embeddings conocido (%s); "
+            "se deriva de LLM_PROVIDER como antes.",
+            declarado, ", ".join(EMBED_PROVIDERS),
+        )
+    return "openai" if settings.LLM_PROVIDER.lower() == "openai" else "ollama"
+
+
 async def get_embedding(text: str, ollama_base_url: str, model: str) -> Optional[List[float]]:
     """
     Request an embedding vector from the embeddings provider.
 
-    Embeddings are **independent of the generation provider** (SPEC-023/AC6):
-    when ``settings.LLM_PROVIDER == "openai"`` the OpenAI Embeddings API is used
-    (``settings.OPENAI_EMBED_MODEL``); otherwise — including when the generation
-    provider is ``anthropic`` — Ollama is used, because Anthropic offers **no**
-    embeddings API. So switching the agentic engine to Claude never routes an
-    embedding to Anthropic nor breaks the RAG.
+    Embeddings are **independent of the generation provider** (SPEC-023/AC6, #265):
+    the route comes from :func:`get_embed_provider`, not from ``LLM_PROVIDER``.
+    Anthropic offers **no** embeddings API, so switching the agentic engine to
+    Claude never routes an embedding to Anthropic nor breaks the RAG.
     """
-    from app.core.config import settings  # lazy to avoid circular imports
-
-    if settings.LLM_PROVIDER.lower() == "openai":
+    if get_embed_provider() == "openai":
         return await _get_embedding_openai(text)
     return await _get_embedding_ollama(text, ollama_base_url, model)
 
@@ -300,9 +331,19 @@ async def upsert_chunks(
     # Embed all chunks in parallel (batches of 20 to avoid overloading Ollama)
     _EMBED_BATCH = 20
 
+    # Dos motivos distintos para caer al pseudovector, y **no** dan el mismo
+    # problema: sin embedding es el proveedor caído (transitorio), y con un tamaño
+    # que no cuadra es una **mala configuración** que no se arregla sola. Se cuentan
+    # por separado para poder decirlo.
+    caidas = {"sin_embedding": 0, "tamano": 0}
+
     async def _embed_one(idx: int, text: str):
         vec = await get_embedding(text, ollama_base_url, embedding_model)
-        if vec is None or len(vec) != vector_size:
+        if vec is None:
+            caidas["sin_embedding"] += 1
+            vec = _fallback_vector(text, vector_size)
+        elif len(vec) != vector_size:
+            caidas["tamano"] += 1
             vec = _fallback_vector(text, vector_size)
         else:
             vec = vec[:vector_size]
@@ -316,6 +357,24 @@ async def upsert_chunks(
         )
         for idx, vec in results:
             vectors[idx] = vec
+
+    # Se avisa una vez por documento, no por fragmento: un PDF de 200 chunks
+    # llenaría el log y el aviso dejaría de leerse.
+    if caidas["tamano"]:
+        logger.warning(
+            "%d/%d fragmentos de '%s' se han indexado con un pseudovector: el "
+            "proveedor de embeddings ('%s') devuelve vectores de otra dimensión que "
+            "la declarada en RAG_VECTOR_SIZE=%d. El documento queda indexado pero "
+            "**no se podrá recuperar por significado**. Ajusta RAG_VECTOR_SIZE al "
+            "modelo, o EMBED_PROVIDER al índice existente, y reindexa.",
+            caidas["tamano"], len(chunks), filename, get_embed_provider(), vector_size,
+        )
+    if caidas["sin_embedding"]:
+        logger.warning(
+            "%d/%d fragmentos de '%s' se han indexado con un pseudovector porque el "
+            "proveedor de embeddings no respondió. Reindexa cuando vuelva.",
+            caidas["sin_embedding"], len(chunks), filename,
+        )
 
     for i, chunk in enumerate(chunks):
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}:{i}"))

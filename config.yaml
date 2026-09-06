@@ -8,6 +8,12 @@ llm:
   # 'openai' (servidor compatible: vLLM/LM Studio vía openai.base_url). También
   # se puede sobreescribir con la variable de entorno LLM_PROVIDER (mayor prioridad).
   provider: anthropic
+  # Proveedor de EMBEDDINGS, independiente del de generación (#265): Anthropic no
+  # ofrece API de embeddings, así que los dos no pueden ser lo mismo. 'ollama' u
+  # 'openai'; vacío = comportamiento heredado, derivado de `provider` (openai si la
+  # generación es OpenAI, Ollama en cualquier otro caso). Declararlo permite generar
+  # con Claude y vectorizar con OpenAI. Un valor desconocido cae al heredado y avisa.
+  embed_provider: ""
   # Resilience: auto-retry transient LLM failures (connection refused, timeouts,
   # 5xx, empty responses) with exponential backoff + jitter before failing a node.
   max_retries: 3          # extra attempts after the first try (0 disables)
