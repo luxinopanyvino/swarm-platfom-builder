@@ -69,8 +69,8 @@ langgraph>=0.2.0
 langchain-core>=0.3.0
 
 # LLM providers
-anthropic>=0.40.0
-openai>=1.0.0
+anthropic>=1.3.0
+openai>=3.8.0
 
 # Testing
 pytest>=8.0.0
