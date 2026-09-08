@@ -40,6 +40,9 @@ Las áreas y revisores obligatorios se definen en
 
   No se permiten ramas sin prefijo ni con prefijos fuera de esta tabla.
 - Todo cambio entra por **PR contra `develop`**; prohibido push directo.
+  La regla que lo impone en servidor —y la que impide mergear en rojo— está
+  versionada en [`.github/rulesets/develop.json`](../../.github/rulesets/develop.json);
+  cómo se aplica y qué cubre, en [branch-protection.md](branch-protection.md).
 - Releases: se promueve `develop` a la rama/etiqueta de release tras pasar CI y QA.
 - Commits convencionales recomendados (`feat:`, `fix:`, `docs:`, `sec:`).
 
@@ -81,7 +84,13 @@ Ningún agente mergea su propia PR, cierra issues a mano ni trabaja sobre `devel
 ## 4. Política de revisión
 
 - Mínimo **1 aprobación** (2 para cambios en áreas de seguridad/infra).
-- CI en verde obligatorio (lint, tests, build, escaneo de dependencias).
+  *Nota:* hoy la regla de rama la exige en **0**, porque GitHub no deja aprobar
+  la propia PR y con un solo mantenedor un `1` bloquearía todas. La política no
+  cambia: falta quien la ejerza. Motivo y cómo revertirlo, en
+  [branch-protection.md](branch-protection.md).
+- CI en verde obligatorio (lint, tests, build, escaneo de dependencias), y no
+  como costumbre: los checks son **obligatorios** en la protección de rama
+  ([branch-protection.md](branch-protection.md)).
 - Los cambios que tocan áreas de CODEOWNERS requieren a su owner.
 
 ## 5. Definition of Ready (DoR) — antes de implementar
