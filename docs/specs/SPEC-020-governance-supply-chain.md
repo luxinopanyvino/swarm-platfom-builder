@@ -49,9 +49,14 @@ de datos/PII.
 - [ ] **AC5** — *Given* los datos personales y artefactos generados, *Then*
   existe una **política de retención** documentada (qué se guarda, cuánto y
   cómo se purga) y un mecanismo de purga aplicable.
-- [ ] **AC6** — *Given* el flujo de trabajo, *Then* SDD está formalizado:
+- [x] **AC6** — *Given* el flujo de trabajo, *Then* SDD está formalizado:
   specs con DoR/DoD (GOVERNANCE §5–6), CODEOWNERS activo y el pipeline de
   autoría de specs documentado (ADR-0007).
+  *(T6.6: los tres documentos ya existían; lo que faltaba era que siguieran
+  siendo ciertos. `backend/tests/test_sdd_governance.py` los ata al repositorio y
+  al hacerlo destapó una regla de CODEOWNERS muerta —cubría el riesgo de SSRF
+  apuntando a un fichero borrado—, ya corregida. ADR-0007 pasa a **Aceptado**:
+  la gobernanza lo invocaba como norma mientras él se declaraba provisional.)*
 
 ## 4. Diseño propuesto
 
@@ -64,7 +69,11 @@ la primera limpieza + `.github/dependabot.yml`. AC3: `requirements.in` →
 compilado con hashes. AC4: tabla `audit_log` + helper en los routers
 sensibles (se apoya en la correlación de SPEC-019/AC1). AC5: documento en
 `docs/governance/` + job de purga. AC6: ya materializado en
-GOVERNANCE/CODEOWNERS/ADR-0007; el AC exige que se mantenga.
+GOVERNANCE/CODEOWNERS/ADR-0007; el AC exige que **se mantenga**, y eso no lo
+sostiene un documento sino una prueba: `test_sdd_governance.py` cruza las tres
+patas con el repositorio (que la DoR/DoD tengan criterios, que ninguna regla de
+CODEOWNERS apunte a algo inexistente, que las skills y comandos que mapea el ADR
+existan).
 
 ## 5. Riesgos y mitigaciones
 
