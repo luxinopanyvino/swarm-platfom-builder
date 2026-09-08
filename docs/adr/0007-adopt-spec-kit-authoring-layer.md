@@ -1,6 +1,6 @@
 # ADR-0007: Adoptar Spec Kit como capa de autoría del SDD
 
-- **Estado:** Propuesto
+- **Estado:** Aceptado
 - **Fecha:** 2026-07-04
 - **Decisores:** Equipo de plataforma
 - **Relacionado:** ADR-0002 (SDD), [GOVERNANCE.md](../governance/GOVERNANCE.md),

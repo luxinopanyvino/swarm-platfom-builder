@@ -1,5 +1,7 @@
-# CODEOWNERS — revisores obligatorios por área.
-# Sustituye los @placeholders por los handles/equipos reales de GitHub.
+# CODEOWNERS — revisores obligatorios por área (GOVERNANCE §4).
+# Toda ruta que aparezca aquí debe existir: una regla que apunta a un fichero
+# borrado no protege nada y nadie se entera, porque GitHub no avisa. Lo comprueba
+# backend/tests/test_sdd_governance.py.
 # Ver docs/governance/GOVERNANCE.md.
 
 # Por defecto
@@ -11,8 +13,14 @@
 /backend/app/core/config.py         @luxinopanyvino
 /SECURITY.md                        @luxinopanyvino
 
-# Egress / scraper (riesgo SSRF)
-/backend/app/modules/agents/adapters/scraper.py   @luxinopanyvino
+# Egress (riesgo SSRF): la única puerta de salida hacia destinos que eligen la
+# persona usuaria o el modelo (SPEC-024/T2.5). Aquí había una regla sobre el
+# scraper del Investigador; ese fichero se eliminó en 71e3923 y la regla se quedó
+# apuntándolo, así que durante ese tiempo el riesgo de SSRF no tuvo revisor de área
+# mientras el código que lo lleva —el guardián y el catálogo de herramientas— sí
+# cambiaba.
+/backend/app/platform/egress.py                   @luxinopanyvino
+/backend/app/platform/capabilities/tools.py       @luxinopanyvino
 
 # Infraestructura y despliegue
 /docker-compose.yml                 @luxinopanyvino
