@@ -9,65 +9,17 @@ from app.platform.project_access import get_project_context
 from app.platform.project_context import ProjectContext
 from app.models import AIAssistRequest, AIAssistResponse, AIIngestRequest, AIFormatRequest, AIFormatResponse, ScientificFormat
 from app.platform.llm import call_llm, get_default_model
-from app.shared.qdrant import qdrant_client
+from app.platform.capabilities.rag import (
+    LIBRARY_AGENT,
+    EmbeddingDimensionMismatch,
+    chunk_text,
+    embed_vector_size,
+    ensure_collection,
+    upsert_chunks,
+)
 from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
-
-
-def _vectorize_text(text: str, dim: int) -> list[float]:
-    """Simple deterministic vectorizer for demo RAG (no external embeddings)."""
-    buckets = [0.0] * dim
-    for i, char in enumerate(text.lower()):
-        buckets[(ord(char) + i) % dim] += 1.0
-
-    norm = sum(value * value for value in buckets) ** 0.5
-    if norm == 0:
-        return buckets
-    return [value / norm for value in buckets]
-
-
-def _chunk_text(text: str, chunk_size: int = 400) -> list[str]:
-    """Split text into chunks."""
-    clean = " ".join(text.split())
-    return [clean[i : i + chunk_size] for i in range(0, len(clean), chunk_size)]
-
-
-async def _ensure_qdrant_collection(collection: str) -> None:
-    """Ensure Qdrant collection exists."""
-    try:
-        async with qdrant_client() as client:
-            response = await client.get(f"/collections/{collection}")
-            if response.status_code == 200:
-                return
-            if response.status_code != 404:
-                raise HTTPException(status_code=502, detail="Qdrant error")
-
-            create_response = await client.put(
-                f"/collections/{collection}",
-                json={
-                    "vectors": {
-                        "size": settings.RAG_VECTOR_SIZE,
-                        "distance": "Cosine",
-                    }
-                },
-            )
-            if create_response.status_code not in (200, 201):
-                raise HTTPException(status_code=502, detail="Could not create RAG collection")
-    except httpx.RequestError:
-        raise HTTPException(status_code=502, detail="Qdrant unavailable")
-
-
-async def _generate_with_ollama(model: str, query: str, contexts: list[str]) -> str:
-    """Generate text using Ollama (direct path, bypasses provider routing)."""
-    context_block = "\n".join(f"- {ctx}" for ctx in contexts) if contexts else "- (no context)"
-    prompt = (
-        "You are a scientific writing assistant. Use the RAG context to answer briefly.\n\n"
-        f"Question:\n{query}\n\n"
-        f"RAG Context:\n{context_block}\n\n"
-        "Answer:"
-    )
-    return await call_llm(prompt, model=model, timeout=45.0)
 
 
 @router.get("/models")
@@ -114,10 +66,19 @@ async def assist(
     token_data=Depends(get_current_user),
     project: ProjectContext = Depends(get_project_context),
 ):
-    """AI writing assistance using RAG."""
-    await _ensure_qdrant_collection(project.collection(settings.QDRANT_COLLECTION))
-    
-    # Generate suggestion
+    """Sugerencia de escritura del modelo, **sin recuperación**.
+
+    El nombre y el `sources` de la respuesta prometen RAG; hoy no lo hay: se llama
+    al modelo con el prompt tal cual y se devuelve `sources=[]`. Antes se creaba
+    aquí la colección del proyecto —una colección que esta ruta no lee—, lo que
+    sostenía la apariencia de que sí buscaba. Se ha quitado: es preferible una
+    promesa incumplida y visible a una plomería que la disimula. Quien quiera
+    recuperación tiene la de los agentes, que es la buena.
+
+    `project` se queda aunque el cuerpo no lo use: es la dependencia que resuelve y
+    **autoriza** `X-Project-Id`. Quitarla haría que una petición sin cabecera —o con
+    la de un proyecto ajeno— pasara a responder 200.
+    """
     model = get_default_model()
     try:
         suggestion = await call_llm(req.user_prompt, model=model, timeout=45.0)
@@ -139,47 +100,56 @@ async def ingest(
     token_data=Depends(get_current_user),
     project: ProjectContext = Depends(get_project_context),
 ):
-    """Ingest text into RAG (Qdrant), dentro del espacio del proyecto activo.
+    """Indexa texto en el RAG del proyecto activo, por la puerta de siempre.
 
-    Este módulo escribe en Qdrant por su cuenta, al margen de
-    `platform/capabilities/rag`. Si se quedara fuera del espacio por proyecto
-    seguiría habiendo un escritor en la colección común, y el aislamiento de AC6
-    valdría solo para la mitad de los caminos.
+    Este endpoint tenía plomería propia: troceaba, «vectorizaba» con un histograma
+    de caracteres y escribía en Qdrant a mano. Eso no son embeddings —dos textos
+    con las mismas letras eran idénticos para él— y aterrizaba en
+    `p_<proyecto>__rag_docs`, que es justo la colección donde los agentes buscan
+    con embeddings de verdad. Además escribía los puntos **sin `agent_name`**, y
+    como toda la recuperación filtra por ese campo, lo indexado no lo veía nadie:
+    ocupaba sitio y no aparecía jamás.
+
+    Ahora delega en `platform/capabilities/rag`, que es la única puerta: usa el
+    proveedor de embeddings activo, deriva la dimensión del modelo (#322) y
+    distingue un proveedor caído —transitorio, se indexa con respaldo— de una
+    dimensión que no cuadra, que es configuración y corta.
+
+    Va al bucket compartido `__library__` porque esta ruta no recibe agente, y es
+    el único destino desde el que el documento es legible para todos los del
+    proyecto en vez de invisible para todos.
     """
     collection = project.collection(settings.QDRANT_COLLECTION)
-    await _ensure_qdrant_collection(collection)
-    
-    # Chunk and vectorize
-    chunks = _chunk_text(req.text)
-    vectors = [_vectorize_text(chunk, settings.RAG_VECTOR_SIZE) for chunk in chunks]
-    
-    # Upsert to Qdrant
+    chunks = chunk_text(req.text)
+    if not chunks:
+        raise HTTPException(status_code=422, detail="No hay texto que indexar")
+
+    doc_id = str(uuid4())
+    await ensure_collection(
+        settings.QDRANT_URL, collection, embed_vector_size(), settings.QDRANT_API_KEY
+    )
+    # Una dimensión que no cuadra es configuración, no un fallo del servicio: 409
+    # con el motivo, en vez de un 200 sobre ruido.
     try:
-        async with qdrant_client() as client:
-            points = [
-                {
-                    "id": str(uuid4()),
-                    "vector": vec,
-                    "payload": {
-                        "article_id": str(req.article_id),
-                        "source_id": req.source_id,
-                        "text": chunk
-                    }
-                }
-                for chunk, vec in zip(chunks, vectors)
-            ]
-            
-            response = await client.put(
-                f"/collections/{collection}/points?wait=true",
-                json={"points": points}
-            )
-            
-            if response.status_code not in (200, 201):
-                raise HTTPException(status_code=502, detail=f"Could not upsert to Qdrant: {response.text}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=502, detail="Qdrant unavailable")
-    
-    return {"status": "queued", "task_id": str(uuid4())}
+        count = await upsert_chunks(
+            qdrant_url=settings.QDRANT_URL,
+            collection=collection,
+            doc_id=doc_id,
+            agent_name=LIBRARY_AGENT,
+            filename=req.source_id,
+            chunks=chunks,
+            ollama_base_url=settings.OLLAMA_BASE_URL,
+            embedding_model=settings.OLLAMA_EMBED_MODEL,
+            vector_size=embed_vector_size(),
+            api_key=settings.QDRANT_API_KEY,
+        )
+    except EmbeddingDimensionMismatch as error:
+        raise HTTPException(status_code=409, detail=str(error))
+
+    if count <= 0:
+        raise HTTPException(status_code=502, detail="No se pudo indexar el texto")
+
+    return {"status": "indexed", "doc_id": doc_id, "chunks_indexed": count}
 
 
 @router.post("/format", response_model=AIFormatResponse)
