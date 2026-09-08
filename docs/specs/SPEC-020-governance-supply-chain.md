@@ -31,6 +31,11 @@ de datos/PII.
 - [ ] **AC1** — *Given* una PR a `develop`, *When* corre la CI, *Then* ejecuta
   al menos pytest backend, build frontend, validación de specs y escaneo de
   secretos, y la PR no puede mergear en rojo (branch protection).
+  *(T6.1: la CI cumple la primera mitad y la regla está versionada en
+  `.github/rulesets/develop.json` con su guía en `docs/governance/branch-protection.md`.
+  Queda un paso manual e inevitable: **importar el ruleset** en Settings → Rules.
+  Marcar AC1 antes de eso sería dar por hecho lo único que este repo no puede
+  comprobar desde dentro.)*
 - [ ] **AC2** — *Given* la CI, *Then* incluye escaneo de dependencias
   (`pip-audit` + `npm audit`) y Dependabot está configurado para backend,
   frontend y GitHub Actions.
@@ -50,7 +55,10 @@ de datos/PII.
 
 ## 4. Diseño propuesto
 
-AC1 formaliza `.github/workflows/ci.yml` existente (+ branch protection).
+AC1 formaliza `.github/workflows/ci.yml` existente y escribe la protección de
+rama como artefacto versionado (`.github/rulesets/develop.json`) en vez de dejarla
+en configuración invisible; un test cruza los checks obligatorios con los jobs
+reales para que renombrar un job no desactive el gate en silencio.
 AC2: jobs `pip-audit`/`npm audit` no bloqueantes al inicio, bloqueantes tras
 la primera limpieza + `.github/dependabot.yml`. AC3: `requirements.in` →
 compilado con hashes. AC4: tabla `audit_log` + helper en los routers
