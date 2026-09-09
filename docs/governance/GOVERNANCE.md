@@ -169,7 +169,19 @@ Una tarea/épica está *Ready* cuando:
   ([`seed_github_project.py`](../../scripts/seed_github_project.py)), crear la label
   en GitHub y reflejarla aquí y en el backlog.
 
-### 7.1 Evaluation-Driven Development (EDD)
+### 7.1 Estrategia de pruebas (QA)
+
+Las pruebas **deterministas** —unitarias, de integración y de carga— se gobiernan
+por [SPEC-026](../specs/SPEC-026-qa-test-strategy.md) (área `area/qa`, épica E14).
+Qué es cada nivel aquí, dónde vive, cuál bloquea una PR y **qué se decide no
+probar**, en [qa-strategy.md](qa-strategy.md).
+
+La frontera con la sección siguiente es la naturaleza de lo que se mide: QA cubre
+lo que tiene una respuesta correcta y repetible; EDD, el comportamiento
+probabilístico de agentes y modelos. Confundirlas lleva a gatear una PR con una
+métrica que varía entre ejecuciones.
+
+### 7.2 Evaluation-Driven Development (EDD)
 
 Complementa al SDD para los componentes **probabilísticos** (agentes/modelos). El
 *qué* se gobierna por SDD; el *cómo de bien se comporta* lo gobierna EDD

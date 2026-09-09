@@ -132,6 +132,38 @@ Labels: `epic`, `task`, `area/*`, `sev/{high,medium,low}`.
 | T9.5 | Gate EDD en CI para PRs que tocan agentes/modelos (umbrales de regresión) | 🟠 |
 | T9.6 | Gobernanza EDD (alta de `area/evaluation`, DoR/DoD de evaluación, CODEOWNERS) | 🟡 |
 
+## E14 — Estrategia de pruebas (QA)  · `area/qa`
+> Cubrir los tres huecos que la disciplina de «un test por cambio» no cubre:
+> el frontend no tiene ninguna prueba, casi todo es unitario (12 de 61 ficheros
+> ejercitan HTTP) y no hay nada contra servicios reales ni bajo carga. Definición
+> en [SPEC-026](../specs/SPEC-026-qa-test-strategy.md); la estrategia, en
+> [qa-strategy.md](../governance/qa-strategy.md).
+
+| ID | Tarea | Sev |
+|----|-------|-----|
+| T14.1 | Alta del área `area/qa` (validador, seed, gobernanza, backlog) | 🟡 |
+| T14.2 | Documento de estrategia de pruebas y su test de vigencia | 🟠 |
+| T14.3 | Medir cobertura y fijar el suelo en CI | 🟠 |
+| T14.4 | Runner de pruebas de frontend y primeras pruebas de `platform/` | 🔴 |
+| T14.5 | Suite de integración contra Qdrant y base de datos reales | 🔴 |
+| T14.6 | Pruebas de carga sobre SSE, indexación RAG y login, con presupuestos | 🟠 |
+| T14.7 | Separar los tres niveles en la CI y ajustar la protección de rama | 🟠 |
+
+## E15 — Evaluación con deepeval  · `area/evaluation`
+> El harness EDD funciona; lo que falta es **qué se mide**: ninguna de las cinco
+> métricas actuales mira la recuperación, y este pipeline es RAG. Definición en
+> [SPEC-027](../specs/SPEC-027-model-evaluation-deepeval.md) y
+> [ADR-0010](../adr/0010-adopt-deepeval-as-metrics-library.md): deepeval entra como
+> **librería de métricas** en el registro que ya existe, no como framework.
+
+| ID | Tarea | Sev |
+|----|-------|-----|
+| T15.1 | Adoptar deepeval como librería de métricas (dependencia, telemetría off) | 🟠 |
+| T15.2 | Puente del juez: deepeval llama por el dispatcher de la plataforma | 🔴 |
+| T15.3 | Métricas de recuperación alimentadas por la traza de explicabilidad | 🔴 |
+| T15.4 | Dataset golden con procedencia `recorded` para el agente con RAG | 🟠 |
+| T15.5 | Umbrales en modo aviso y disciplina escrita en `edd-discipline.md` | 🟠 |
+
 ---
 
 ### Orden recomendado de ejecución

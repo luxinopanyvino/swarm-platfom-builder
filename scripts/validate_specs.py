@@ -26,7 +26,7 @@ SYNC_STATES = {"Ready", "In progress", "Done"}
 ALLOWED_AREAS = {
     "area/security", "area/infra", "area/backend",
     "area/observability", "area/governance", "area/ux",
-    "area/evaluation",
+    "area/evaluation", "area/qa",
 }
 ALLOWED_SEV = {"high", "medium", "low"}
 
